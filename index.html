@@ -100,7 +100,7 @@ tr:hover td{background:rgba(0,154,222,0.03);}
 .bar-fill{height:100%;border-radius:2px;}
 .bar-val{font-size:11px;color:var(--muted);min-width:18px;text-align:right;}
 .vtag{display:inline-block;padding:2px 7px;border-radius:5px;font-size:10px;font-weight:700;white-space:nowrap;}
-.pitch-text{font-size:11px;color:var(--muted);line-height:1.4;max-width:260px;}
+
 
 .buyer-btns{display:flex;gap:5px;flex-wrap:wrap;}
 .btn-li{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:6px;border:1px solid rgba(0,154,222,0.3);color:#97CAEB;font-size:12px;text-decoration:none;transition:all 0.12s;white-space:nowrap;background:rgba(0,154,222,0.07);font-family:'Martel Sans',sans-serif;font-weight:600;}
@@ -129,8 +129,8 @@ tr:hover td{background:rgba(0,154,222,0.03);}
 .sig-box{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px;}
 .sig-val{font-size:22px;font-weight:800;line-height:1;}
 .sig-label{font-size:10px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:0.5px;}
-.pitch-box{background:rgba(0,154,222,0.05);border:1px solid rgba(0,154,222,0.2);border-radius:10px;padding:12px 14px;margin:10px 0;font-size:12px;color:var(--muted);line-height:1.6;}
-.pitch-box::before{content:'💡 Pitch angle: ';font-weight:800;color:var(--accent);}
+
+
 .action-label{font-size:10px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:8px;margin-top:12px;}
 
 .five-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;}
@@ -142,7 +142,7 @@ tr:hover td{background:rgba(0,154,222,0.03);}
 .five-co{font-weight:800;font-size:15px;}
 .five-dm{font-size:11px;color:var(--muted);}
 .five-signals{display:flex;gap:6px;margin:10px 0;flex-wrap:wrap;align-items:center;}
-.five-pitch{background:rgba(0,154,222,0.05);border:1px solid rgba(0,154,222,0.18);border-radius:8px;padding:9px 12px;font-size:11px;color:var(--muted);line-height:1.5;margin:8px 0;}
+
 .five-actions{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;}
 
 .mover-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:10px;display:flex;align-items:center;gap:14px;}
@@ -223,7 +223,7 @@ tr:hover td{background:rgba(0,154,222,0.03);}
   td::before{content:attr(data-label);font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.6px;min-width:72px;flex-shrink:0;padding-top:3px;}
   td[data-label=""]::before{display:none;}
   td[data-label=""]{padding:2px 0;}
-  .pitch-text{max-width:100%;}
+
   .co-domain{display:none;}
   .acct-hdr{flex-wrap:wrap;}
   .acct-sigs{margin-left:0;width:100%;}
@@ -288,7 +288,7 @@ tr:hover td{background:rgba(0,154,222,0.03);}
   <div class="rep-grid" id="rep-grid"></div>
   <div class="sh">Top 10 Accounts This Week</div>
   <div class="tbl-wrap"><div class="tbl-scroll"><table><thead><tr>
-    <th>#</th><th>Company</th><th>Vertical</th><th>Rep</th><th>Score</th><th>WoW%</th><th>Urgency</th><th>Pitch</th><th>Branded</th><th>AI</th><th>Actions</th>
+    <th>#</th><th>Company</th><th>Vertical</th><th>Rep</th><th>Score</th><th>WoW%</th><th>Urgency</th><th>Branded</th><th>AI</th><th>Actions</th>
   </tr></thead><tbody id="tbody-top10"></tbody></table></div></div>
 <div style="margin-top:14px;display:flex;justify-content:flex-end;"><button class="sam-btn" onclick="openAllModal()" style="font-size:12px;padding:8px 18px;">View All Accounts →</button></div>
 </div>
@@ -367,7 +367,7 @@ tr:hover td{background:rgba(0,154,222,0.03);}
     <span id="all-count" style="color:var(--muted);font-size:11px;white-space:nowrap"></span>
   </div>
   <div class="tbl-wrap"><div class="tbl-scroll"><table><thead><tr>
-    <th>Company</th><th>Vertical</th><th>Rep</th><th>Score</th><th>WoW%</th><th>Urgency</th><th>Pitch</th><th>Branded</th><th>Product</th><th>AI</th><th>Actions</th>
+    <th>Company</th><th>Vertical</th><th>Rep</th><th>Score</th><th>WoW%</th><th>Urgency</th><th>Branded</th><th>Product</th><th>AI</th><th>Actions</th>
   </tr></thead><tbody id="tbody-all"></tbody></table></div></div>
   <div class="pag" id="pag-all"></div>
 
@@ -422,26 +422,8 @@ function calcUrgency(s,w,b,p,a){
 }
 function calcPriority(s,w,b,a,p){return Math.round(((s/80)*40+Math.min(w/60,1)*25+(b/90)*20+(a/71)*10+(p/65)*5)*10)/10;}
 
-function getPitch(s,w,b,p,a,u){
-  if(b>50&&p>40)return "Researching Scale Computing™ by name while actively evaluating HCI. This lead is at the bottom of the funnel. Reach out to share competitive data and ask for a discovery call.";
-  if(b>50)return "They're Googling Scale Computing™ by name. Skip the awareness email. Call or send a direct note: 'Noticed your team has been researching us — happy to walk you through what we're seeing in your space.' Push for a demo this week.";
-  if(b>20&&a>50)return "Brand-aware and AI-ready — strong combination. Lead with the edge AI infrastructure story: SC//Hypercore™ virtualization suite runs AI workloads without the complexity and licensing cost of Nutanix or Broadcom VMware. Push for a 30-min technical call.";
-  if(b>20&&p>35)return "Brand signal + active HCI research. Check whether they're in a refresh window and book a discovery call.";
-  if(b>0&&s>=65)return "They know Scale Computing™ and engagement is strong. Make the first move — skip the brochure, send a direct ask. A short 'we should talk' note works better than a drip campaign at this stage.";
-  if(a>55&&s>=65)return "High AI readiness + strong overall engagement. Nutanix and Broadcom VMware will price them out of AI at the edge. Open with the SC//Hypercore™ virtualization suite edge AI pitch and position simplicity and total cost as your differentiators.";
-  if(u==='Strike Now'&&w>35)return "Score spiked hard this week — a renewal deadline, new budget, or frustration with their current vendor likely triggered this. Call today. Reps who respond within 24 hours of a signal spike win significantly more meetings than those who wait.";
-  if(u==='Strike Now'&&b>0)return "In-market AND already researching Scale Computing™. This is a closeable conversation — skip the nurture track. Send a direct ask: 'We've seen strong research activity from your team. Can we get 30 minutes this week?'";
-  if(u==='Strike Now'&&p>35)return "Hot account actively evaluating HCI — no branded signal means they haven't found Scale Computing™ yet. This is exactly where you win deals: before the shortlist forms. Send the SC//Hypercore™ virtualization suite vs. Nutanix/vSAN comparison and ask for discovery before someone else does.";
-  if(u==='Strike Now')return "All engagement signals are elevated. Don't wait on inbound — direct outreach now. Email + LinkedIn today, follow up with a call if no reply in 48 hours. This window closes fast.";
-  if(p>40&&a>40)return "Evaluating HCI and building for AI — strong dual angle. Simplify their stack now and position SC//Hypercore™ virtualization suite for edge AI compute down the road. If you have a case study from their vertical, lead with it.";
-  if(p>40&&s>=55)return "Active HCI research with no brand signal yet — they haven't found Scale Computing™. This is the pre-shortlist window where deals are actually won. Drop a one-pager comparing SC//Hypercore™ virtualization suite vs. vSAN or Nutanix and ask for a discovery call.";
-  if(w>30)return "Score jumped significantly this week. Something triggered this — budget approval, contract coming up for renewal, or a bad experience with a current vendor. Reach out now while they're in motion. Don't let it cool.";
-  if(a>45)return "AI readiness signals building. Not in active evaluation yet, but moving that direction. Best play: share a relevant piece on edge AI infrastructure and get on their radar before the formal evaluation starts.";
-  if(s>=50)return "Intent building steadily — not hot yet, but moving. Too early for a direct pitch. Best play is a content touch, webinar invite, or LinkedIn warm-up. Goal is to be a known quantity when they move to active evaluation.";
-  return "Early radar signals — they're not shopping yet. Light touches only: LinkedIn connection, educational content, or event invite. Build familiarity now so you're not a cold call when the signal heats up.";
-}
 
-// ── GVIZ PARSING ────────────────────────────────────────────
+// ── GVIZ PARSINGG ────────────────────────────────────────────
 function parseGvizResponse(data){
   if(!data||!data.table)throw new Error('Unexpected response format from Google Sheets.');
   var cols=data.table.cols.map(function(c){return(c.label||c.id||'').trim();});
@@ -473,8 +455,7 @@ function processRawData(raw){
     var vertical=classifyVertical(company);
     var urgency=calcUrgency(score,wow_pct,ib,ip,ai);
     var priority=calcPriority(score,wow_pct,ib,ai,ip);
-    var pitch=getPitch(score,wow_pct,ib,ip,ai,urgency);
-    accounts.push({company,rep,domain,score,wow_pct,intent_product:ip,intent_branded:ib,ai_readiness:ai,ad_impressions:adI,ad_clicks:adC,exp_count:exp,last_score:last,vertical,urgency,pitch,priority});
+    accounts.push({company,rep,domain,score,wow_pct,intent_product:ip,intent_branded:ib,ai_readiness:ai,ad_impressions:adI,ad_clicks:adC,exp_count:exp,last_score:last,vertical,urgency,priority});
   });
   accounts.sort(function(a,b){return b.score-a.score;});
   var repMap={};
@@ -539,7 +520,7 @@ function renderAll_(){
 
   var tb=document.getElementById('tbody-top10');tb.innerHTML='';
   D.accounts.slice(0,10).forEach(function(a,i){
-    tb.innerHTML+='<tr><td data-label="">'+(i+1)+'</td><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div><div class="co-name">'+a.company+'</div><div class="co-domain">'+a.domain+'</div></div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Rep" style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700;font-size:12px">'+a.rep+'</td><td data-label="Score">'+sp(a.score)+'</td><td data-label="WoW">'+wowHtml(a.wow_pct)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Pitch"><span class="pitch-text">'+a.pitch+'</span></td><td data-label="Branded">'+bar(a.intent_branded,90,'#009ADE')+'</td><td data-label="AI">'+bar(a.ai_readiness,71,'#3FB748')+'</td><td data-label="Actions">'+actions(a.company)+'</td></tr>';
+    tb.innerHTML+='<tr><td data-label="">'+(i+1)+'</td><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div><div class="co-name">'+a.company+'</div><div class="co-domain">'+a.domain+'</div></div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Rep" style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700;font-size:12px">'+a.rep+'</td><td data-label="Score">'+sp(a.score)+'</td><td data-label="WoW">'+wowHtml(a.wow_pct)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Branded">'+bar(a.intent_branded,90,'#009ADE')+'</td><td data-label="AI">'+bar(a.ai_readiness,71,'#3FB748')+'</td><td data-label="Actions">'+actions(a.company)+'</td></tr>';
   });
 
   var ft=document.getElementById('five-tabs');ft.innerHTML='';
@@ -557,7 +538,7 @@ function loadFive(rep){
   if(btn){btn.style.background=col;btn.style.borderColor='transparent';btn.style.color='#fff';}
   var g=document.getElementById('five-grid');g.innerHTML='';
   (D.top5[rep]||[]).forEach(function(a,i){
-    g.innerHTML+='<div class="five-card"><div class="five-rank">'+(i+1)+'</div><div class="five-co-wrap">'+logo(a.domain,28).replace('co-logo','five-logo')+'<div><div class="five-co">'+a.company+'</div><div class="five-dm">'+a.domain+'</div></div></div><div class="five-signals">'+sp(a.score)+' '+ub(a.urgency)+' '+vtag(a.vertical)+(a.intent_branded>0?'<span style="font-size:11px;color:#009ADE;font-weight:700">Branded: '+a.intent_branded+'</span>':'')+'</div><div class="five-pitch">'+a.pitch+'</div><div class="five-actions">'+actions(a.company)+'</div>'+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:8px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\""+" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button></div>";
+    g.innerHTML+='<div class="five-card"><div class="five-rank">'+(i+1)+'</div><div class="five-co-wrap">'+logo(a.domain,28).replace('co-logo','five-logo')+'<div><div class="five-co">'+a.company+'</div><div class="five-dm">'+a.domain+'</div></div></div><div class="five-signals">'+sp(a.score)+' '+ub(a.urgency)+' '+vtag(a.vertical)+(a.intent_branded>0?'<span style="font-size:11px;color:#009ADE;font-weight:700">Branded: '+a.intent_branded+'</span>':'')+'</div><div class="five-actions">'+actions(a.company)+'</div>'+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:8px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\""+" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button></div>";
   });
 }
 function loadDrill(rep){
@@ -567,7 +548,7 @@ function loadDrill(rep){
   var el=document.getElementById('drill-content');el.innerHTML='';
   (D.rep_top10[rep]||[]).forEach(function(a,i){
     var uid='dr-'+i+'-'+rep.replace(/ /g,'');
-    el.innerHTML+='<div class="acct-card"><div class="acct-hdr" onclick="toggleAcct(\''+uid+'\')"><div class="acct-rank" style="color:'+col+'">#'+(i+1)+'</div>'+logo(a.domain,28).replace('co-logo','acct-logo')+'<div class="acct-info"><div class="acct-co">'+a.company+'</div><div class="acct-dm">'+a.domain+'</div></div><div class="acct-sigs">'+sp(a.score)+' '+ub(a.urgency)+' '+vtag(a.vertical)+' '+wowHtml(a.wow_pct)+'</div><span class="expand-icon" id="icon-'+uid+'">▶</span></div><div class="acct-body" id="'+uid+'"><div class="sig-grid"><div class="sig-box"><div class="sig-val" style="color:var(--gold)">'+a.score+'</div><div class="sig-label">Hot Score</div></div><div class="sig-box"><div class="sig-val" style="color:'+(a.wow_pct>0?'var(--green)':'var(--red)')+'">'+( a.wow_pct>0?'+':'')+a.wow_pct.toFixed(1)+'%</div><div class="sig-label">WoW</div></div><div class="sig-box"><div class="sig-val" style="color:#97CAEB">'+a.intent_product+'</div><div class="sig-label">Product</div></div><div class="sig-box"><div class="sig-val" style="color:#009ADE">'+a.intent_branded+'</div><div class="sig-label">Branded</div></div><div class="sig-box"><div class="sig-val" style="color:var(--green)">'+a.ai_readiness+'</div><div class="sig-label">AI Ready</div></div><div class="sig-box"><div class="sig-val">'+a.ad_impressions.toLocaleString()+'</div><div class="sig-label">Impr.</div></div></div><div class="pitch-box">'+a.pitch+'</div><div class="action-label">🎯 Actions</div>'+actions(a.company)+''+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:10px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\""+" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button></div></div>";
+    el.innerHTML+='<div class="acct-card"><div class="acct-hdr" onclick="toggleAcct(\''+uid+'\')"><div class="acct-rank" style="color:'+col+'">#'+(i+1)+'</div>'+logo(a.domain,28).replace('co-logo','acct-logo')+'<div class="acct-info"><div class="acct-co">'+a.company+'</div><div class="acct-dm">'+a.domain+'</div></div><div class="acct-sigs">'+sp(a.score)+' '+ub(a.urgency)+' '+vtag(a.vertical)+' '+wowHtml(a.wow_pct)+'</div><span class="expand-icon" id="icon-'+uid+'">▶</span></div><div class="acct-body" id="'+uid+'"><div class="sig-grid"><div class="sig-box"><div class="sig-val" style="color:var(--gold)">'+a.score+'</div><div class="sig-label">Hot Score</div></div><div class="sig-box"><div class="sig-val" style="color:'+(a.wow_pct>0?'var(--green)':'var(--red)')+'">'+( a.wow_pct>0?'+':'')+a.wow_pct.toFixed(1)+'%</div><div class="sig-label">WoW</div></div><div class="sig-box"><div class="sig-val" style="color:#97CAEB">'+a.intent_product+'</div><div class="sig-label">Product</div></div><div class="sig-box"><div class="sig-val" style="color:#009ADE">'+a.intent_branded+'</div><div class="sig-label">Branded</div></div><div class="sig-box"><div class="sig-val" style="color:var(--green)">'+a.ai_readiness+'</div><div class="sig-label">AI Ready</div></div><div class="sig-box"><div class="sig-val">'+a.ad_impressions.toLocaleString()+'</div><div class="sig-label">Impr.</div></div></div><div class="action-label">🎯 Actions</div>'+actions(a.company)+''+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:10px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\""+" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button></div></div>";
   });
 }
 function toggleAcct(id){var b=document.getElementById(id),ic=document.getElementById('icon-'+id);if(!b)return;var o=b.classList.toggle('open');if(ic)ic.classList.toggle('open',o);}
@@ -593,7 +574,7 @@ function renderAllTable(){
   var tb=document.getElementById('tbody-all');tb.innerHTML='';
   var page=allF.slice((allP-1)*PS,allP*PS);
   if(!page.length){tb.innerHTML='<tr><td colspan="11" class="empty">No results</td></tr>';return;}
-  page.forEach(function(a){tb.innerHTML+='<tr><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div><div class="co-name">'+a.company+'</div><div class="co-domain">'+a.domain+'</div></div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Rep" style="color:'+(RC[a.rep]||'#6b6b99')+';font-size:12px;font-weight:600">'+a.rep+'</td><td data-label="Score">'+sp(a.score)+'</td><td data-label="WoW">'+wowHtml(a.wow_pct)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Pitch"><span class="pitch-text">'+a.pitch+'</span></td><td data-label="Branded">'+bar(a.intent_branded,90,'#009ADE')+'</td><td data-label="Product">'+bar(a.intent_product,65,'#97CAEB')+'</td><td data-label="AI">'+bar(a.ai_readiness,71,'#3FB748')+'</td><td data-label="Actions">'+actions(a.company)+'</td></tr>';});
+  page.forEach(function(a){tb.innerHTML+='<tr><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div><div class="co-name">'+a.company+'</div><div class="co-domain">'+a.domain+'</div></div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Rep" style="color:'+(RC[a.rep]||'#6b6b99')+';font-size:12px;font-weight:600">'+a.rep+'</td><td data-label="Score">'+sp(a.score)+'</td><td data-label="WoW">'+wowHtml(a.wow_pct)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Branded">'+bar(a.intent_branded,90,'#009ADE')+'</td><td data-label="Product">'+bar(a.intent_product,65,'#97CAEB')+'</td><td data-label="AI">'+bar(a.ai_readiness,71,'#3FB748')+'</td><td data-label="Actions">'+actions(a.company)+'</td></tr>';});
   document.getElementById('all-count').textContent=allF.length+' accounts';
   var mc=document.getElementById('all-modal-count');if(mc)mc.textContent=allF.length+' accounts';
   var tot=Math.ceil(allF.length/PS),pg=document.getElementById('pag-all');
@@ -606,22 +587,22 @@ function goP(p){allP=p;renderAllTable();window.scrollTo(0,0);}
 
 function renderMovers(){
   var el=document.getElementById('movers-list');el.innerHTML='';
-  D.movers.forEach(function(a){el.innerHTML+='<div class="mover-card"><div style="flex:1"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">'+logo(a.domain,28)+'<span style="font-weight:800;font-size:15px">'+a.company+'</span>'+ub(a.urgency)+vtag(a.vertical)+'</div><div style="font-size:12px;color:var(--muted);margin-bottom:8px">Rep: <span style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700">'+a.rep+'</span> · Score: '+sp(a.score)+'</div><div style="font-size:11px;color:var(--muted);background:rgba(0,154,222,0.05);border:1px solid rgba(0,154,222,0.18);border-radius:7px;padding:8px 10px;margin-bottom:10px;line-height:1.5">'+a.pitch+'</div>'+actions(a.company)+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:8px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\"" +" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button>"+'</div><div class="mover-pct">▲'+a.wow_pct.toFixed(1)+'%<span>WoW</span></div></div>';});
+  D.movers.forEach(function(a){el.innerHTML+='<div class="mover-card"><div style="flex:1"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">'+logo(a.domain,28)+'<span style="font-weight:800;font-size:15px">'+a.company+'</span>'+ub(a.urgency)+vtag(a.vertical)+'</div><div style="font-size:12px;color:var(--muted);margin-bottom:8px">Rep: <span style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700">'+a.rep+'</span> · Score: '+sp(a.score)+'</div>'+actions(a.company)+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:8px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\"" +" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button>"+'</div><div class="mover-pct">▲'+a.wow_pct.toFixed(1)+'%<span>WoW</span></div></div>';});
 }
 function renderBranded(){
   document.getElementById('branded-banner').innerHTML='🎯 <strong>'+D.branded.length+' accounts</strong> have measurable branded search intent for "Scale Computing™." These buyers are in research mode — strike fast.';
   var tb=document.getElementById('tbody-branded');tb.innerHTML='';
-  D.branded.forEach(function(a){tb.innerHTML+='<tr><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div class="co-name">'+a.company+'</div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Rep" style="color:'+(RC[a.rep]||'#6b6b99')+';font-size:12px;font-weight:600">'+a.rep+'</td><td data-label="Score">'+sp(a.score)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Branded"><div class="bar-wrap"><div class="bar-bg" style="min-width:60px"><div class="bar-fill" style="width:'+Math.min(100,(a.intent_branded/90)*100)+'%;background:#009ADE"></div></div><span style="font-weight:700;color:#009ADE">'+a.intent_branded+'</span></div></td><td data-label="Product">'+bar(a.intent_product,65,'#97CAEB')+'</td><td data-label="AI">'+bar(a.ai_readiness,71,'#3FB748')+'</td><td data-label="Pitch"><span class="pitch-text">'+a.pitch+'</span></td><td data-label="Actions">'+actions(a.company)+'</td></tr>';});
+  D.branded.forEach(function(a){tb.innerHTML+='<tr><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div class="co-name">'+a.company+'</div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Rep" style="color:'+(RC[a.rep]||'#6b6b99')+';font-size:12px;font-weight:600">'+a.rep+'</td><td data-label="Score">'+sp(a.score)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Branded"><div class="bar-wrap"><div class="bar-bg" style="min-width:60px"><div class="bar-fill" style="width:'+Math.min(100,(a.intent_branded/90)*100)+'%;background:#009ADE"></div></div><span style="font-weight:700;color:#009ADE">'+a.intent_branded+'</span></div></td><td data-label="Product">'+bar(a.intent_product,65,'#97CAEB')+'</td><td data-label="AI">'+bar(a.ai_readiness,71,'#3FB748')+'</td><td data-label="Actions">'+actions(a.company)+'</td></tr>';});
 }
 function renderUnassigned(){
   document.getElementById('unassigned-banner').innerHTML='⚠️ <strong>'+D.unassigned.length+' accounts have no rep assigned.</strong> Real pipeline sitting uncovered — check these against your territory map.';
   var tb=document.getElementById('tbody-unassigned');tb.innerHTML='';
-  D.unassigned.forEach(function(a){tb.innerHTML+='<tr><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div><div class="co-name">'+a.company+'</div><div class="co-domain">'+a.domain+'</div></div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Score">'+sp(a.score)+'</td><td data-label="WoW">'+wowHtml(a.wow_pct)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Branded">'+bar(a.intent_branded,90,'#009ADE')+'</td><td data-label="AI">'+bar(a.ai_readiness,71,'#3FB748')+'</td><td data-label="Pitch"><span class="pitch-text">'+a.pitch+'</span></td><td data-label="Actions">'+actions(a.company)+'</td></tr>';});
+  D.unassigned.forEach(function(a){tb.innerHTML+='<tr><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div><div class="co-name">'+a.company+'</div><div class="co-domain">'+a.domain+'</div></div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Score">'+sp(a.score)+'</td><td data-label="WoW">'+wowHtml(a.wow_pct)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Branded">'+bar(a.intent_branded,90,'#009ADE')+'</td><td data-label="AI">'+bar(a.ai_readiness,71,'#3FB748')+'</td><td data-label="Actions">'+actions(a.company)+'</td></tr>';});
 }
 function renderAI(){
   var top=[...D.accounts].sort(function(a,b){return b.ai_readiness-a.ai_readiness;}).slice(0,20);
   var tb=document.getElementById('tbody-ai');tb.innerHTML='';
-  top.forEach(function(a){tb.innerHTML+='<tr><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div><div class="co-name">'+a.company+'</div><div class="co-domain">'+a.domain+'</div></div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Rep" style="color:'+(RC[a.rep]||'#6b6b99')+';font-size:12px;font-weight:600">'+a.rep+'</td><td data-label="AI"><div class="bar-wrap"><div class="bar-bg" style="min-width:60px"><div class="bar-fill" style="width:'+Math.min(100,(a.ai_readiness/71)*100)+'%;background:#3FB748"></div></div><span style="font-weight:700;color:#3FB748">'+a.ai_readiness+'</span></div></td><td data-label="Score">'+sp(a.score)+'</td><td data-label="WoW">'+wowHtml(a.wow_pct)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Pitch"><span class="pitch-text">'+a.pitch+'</span></td><td data-label="Actions">'+actions(a.company)+'</td></tr>';});
+  top.forEach(function(a){tb.innerHTML+='<tr><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div><div class="co-name">'+a.company+'</div><div class="co-domain">'+a.domain+'</div></div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Rep" style="color:'+(RC[a.rep]||'#6b6b99')+';font-size:12px;font-weight:600">'+a.rep+'</td><td data-label="AI"><div class="bar-wrap"><div class="bar-bg" style="min-width:60px"><div class="bar-fill" style="width:'+Math.min(100,(a.ai_readiness/71)*100)+'%;background:#3FB748"></div></div><span style="font-weight:700;color:#3FB748">'+a.ai_readiness+'</span></div></td><td data-label="Score">'+sp(a.score)+'</td><td data-label="WoW">'+wowHtml(a.wow_pct)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Actions">'+actions(a.company)+'</td></tr>';});
 }
 
 // ── RFP INTEL ────────────────────────────────────────────────
