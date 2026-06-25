@@ -241,6 +241,10 @@ tr:hover td{background:rgba(0,154,222,0.03);}
 
 .sc-footer{background:var(--surface);border-top:1px solid var(--border);padding:10px 24px;display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted2);gap:6px;position:relative;z-index:1;}
 .sc-footer-dot{width:4px;height:4px;border-radius:50%;background:var(--border2);display:inline-block;}
+.pitch-box{background:rgba(0,154,222,0.05);border:1px solid rgba(0,154,222,0.15);border-radius:8px;padding:8px 10px;font-size:11px;color:var(--muted);line-height:1.5;margin:10px 0 6px;}
+.pitch-td{font-size:11px;color:var(--muted);line-height:1.5;max-width:200px;}
+.ir-link{display:inline-block;margin-top:5px;font-size:10px;font-weight:700;color:var(--accent);text-decoration:none;letter-spacing:0.3px;}
+.ir-link:hover{text-decoration:underline;}
 </style>
 </head>
 <body>
@@ -288,7 +292,7 @@ tr:hover td{background:rgba(0,154,222,0.03);}
   <div class="rep-grid" id="rep-grid"></div>
   <div class="sh">Top 10 Accounts This Week</div>
   <div class="tbl-wrap"><div class="tbl-scroll"><table><thead><tr>
-    <th>#</th><th>Company</th><th>Vertical</th><th>Rep</th><th>Score</th><th>WoW%</th><th>Urgency</th><th>Branded</th><th>AI</th><th>Actions</th>
+    <th>#</th><th>Company</th><th>Vertical</th><th>Rep</th><th>Score</th><th>WoW%</th><th>Urgency</th><th>Branded</th><th>AI</th><th>IR Intelligence</th><th>Actions</th>
   </tr></thead><tbody id="tbody-top10"></tbody></table></div></div>
 <div style="margin-top:14px;display:flex;justify-content:flex-end;"><button class="sam-btn" onclick="openAllModal()" style="font-size:12px;padding:8px 18px;">View All Accounts →</button></div>
 </div>
@@ -367,7 +371,7 @@ tr:hover td{background:rgba(0,154,222,0.03);}
     <span id="all-count" style="color:var(--muted);font-size:11px;white-space:nowrap"></span>
   </div>
   <div class="tbl-wrap"><div class="tbl-scroll"><table><thead><tr>
-    <th>Company</th><th>Vertical</th><th>Rep</th><th>Score</th><th>WoW%</th><th>Urgency</th><th>Branded</th><th>Product</th><th>AI</th><th>Actions</th>
+    <th>Company</th><th>Vertical</th><th>Rep</th><th>Score</th><th>WoW%</th><th>Urgency</th><th>Branded</th><th>Product</th><th>AI</th><th>IR Intelligence</th><th>Actions</th>
   </tr></thead><tbody id="tbody-all"></tbody></table></div></div>
   <div class="pag" id="pag-all"></div>
 
@@ -421,6 +425,105 @@ function calcUrgency(s,w,b,p,a){
   return 'Monitor';
 }
 function calcPriority(s,w,b,a,p){return Math.round(((s/80)*40+Math.min(w/60,1)*25+(b/90)*20+(a/71)*10+(p/65)*5)*10)/10;}
+
+// ── IR CONTEXT LOOKUP ────────────────────────────────────────
+// Public companies: sourced from IR docs, earnings calls, press releases.
+// Private companies: marked accordingly.
+// Fuzzy-matched (lowercase substring) against company name at render time.
+var IR_CONTEXT = [
+  // ── PUBLIC — IR data confirmed ──────────────────────────────
+  {match:'hormel',note:'FY2026 Q2 earnings: data & technology is the single largest capex category. Running multi-year Transform & Modernize initiative — $275–300M annual capex committed.',url:'https://www.hormelfoods.com/newsroom/press-releases/hormel-foods-reports-strong-second-quarter-fiscal-2026-results/',lnk:'View Earnings Release'},
+  {match:'pvh',note:'2025 IR: $200M capex includes significant IT infrastructure investment. Executing PVH+ Plan — building demand- and data-driven operating model, digital-first across Calvin Klein & Tommy Hilfiger.',url:'https://www.sec.gov/Archives/edgar/data/78239/000007823926000020/ex99120254q8k.htm',lnk:'View SEC Filing'},
+  {match:'sonoco',note:'FY2025 annual report: investing in AI data center infrastructure demand; $20M production capacity added. $1.5B EBITDA target by 2028 driven by technology improvements.',url:'https://investor.sonoco.com/news/news-details/2026/Sonoco-Reports-Fourth-Quarter-and-Full-Year-2025-Results/default.aspx',lnk:'View Annual Results'},
+  {match:'dsv',note:'2025 annual report: deploying unified TMS across entire road division. DKK 9B in productivity gains targeted from AI/digitalization by 2030. Integrating DB Schenker — largest acquisition in DSV history.',url:'https://investor.dsv.com/news-releases/news-release-details/dsv-1164-2025-annual-report',lnk:'View Annual Report'},
+  {match:'academy sports',note:'FY2025 annual report: CIO-led AI initiative actively underway. $200–240M 2026 capex with ~40% allocated to technology and non-store investments including e-commerce and supply chain.',url:'https://investors.academy.com/financials-filings/annual-reports',lnk:'View Annual Reports'},
+  {match:'kennametal',note:'May 2025: strategic investment in AI-powered CAM software (Toolpath Labs). Active Industry 4.0 digital transformation — digital twins and virtual machining across global manufacturing footprint.',url:'https://www.prnewswire.com/news-releases/kennametal-announces-strategic-investment-in-cam-ai-software-leader-toolpath-labs-to-advance-intelligent-machining-302463424.html',lnk:'View Press Release'},
+  {match:'sweetgreen',note:'FY2025 earnings: 61.8% of revenue is digital (up from 56.4%). Infinite Kitchen automation running in 20+ locations. Digital-first operations and automation are a stated strategic priority for all future growth.',url:'https://investor.sweetgreen.com/financials/quarterly-results/default.aspx',lnk:'View Quarterly Results'},
+  {match:'fossil',note:'Q4 2025 earnings: appointed first-ever Chief Digital Officer. Simplifying technology stack, integrating AI and automation. POS and retail infrastructure upgrades underway across U.S. and EMEA.',url:'https://finance.yahoo.com/news/fossil-group-inc-q4-2025-001514349.html',lnk:'View Earnings Summary'},
+  {match:'chs inc',note:'2025: $150M+ annual technology investment. AI predictive logistics platform fully deployed — projected 12% fuel reduction. $2.5B capital plan 2025–2027 focused on infrastructure modernization across cooperative network.',url:'https://profilemagazine.com/2025/chs-leans-into-tech-transformation/',lnk:'View Article'},
+  {match:'whataburger',note:'Oct 2025: hired first-ever Chief Digital & Technology Transformation Officer (Rohit Kapoor) to build scalable infrastructure supporting ongoing 1,100+ location expansion.',url:'https://www.prnewswire.com/news-releases/whataburger-welcomes-new-chief-digital-and-technology-transformation-officer-rohit-kapoor-302585489.html',lnk:'View Press Release'},
+  {match:'albertsons',note:'FY2026 IR: $2B+ capex plan focused on AI and technology. Partnering with Google, OpenAI, and Databricks. Digital sales up 21% in Q3 FY2025. Four AI bets: digital experience, merchandising, labor scheduling, and supply chain.',url:'https://www.albertsonscompanies.com/newsroom/blog/blog-details/2026/Shaping-the-Future-of-Retail-Accelerating-Growth-with-4-Big-Bets-in-Our-AI-Strategy/default.aspx',lnk:'View AI Strategy'},
+  {match:'skechers',note:'2025 IR: $600–700M capex plan — investing in digital infrastructure, distribution centers, and global omnichannel capabilities. Agreed to be acquired by 3G Capital in May 2025 to accelerate strategic expansion.',url:'https://investors.skechers.com/',lnk:'View Investor Relations'},
+  {match:'union pacific',note:'2026 capital plan: $3.3B — modernizing locomotive fleet, freight cars, and core infrastructure. Technology and automation investments supporting operational efficiency, safety, and network capacity expansion.',url:'https://investor.unionpacific.com/investor-overview',lnk:'View IR Overview'},
+  {match:'foot locker',note:'2025 IR: boosting digital investment 50%+ to >3% of annual sales. Targeting $2.5B in digital sales (25% of total) by 2026. Moving from legacy platforms to scalable, AI-ready modern architecture.',url:'https://www.retailtouchpoints.com/topics/omnichannel-alignment/foot-locker-to-boost-digital-investments-50-as-it-aims-for-25-online-sales-by-2026',lnk:'View Coverage'},
+  {match:'nike',note:'FY2026 IR: active digital transformation with $4.6B in direct revenues. D2C digital strategy central to turnaround; significant investment in technology systems and digital commerce infrastructure.',url:'https://investors.nike.com/investors/news-events-and-reports/investor-news/investor-news-details/2025/NIKE-Inc--Reports-Fiscal-2026-Second-Quarter-Results/default.aspx',lnk:'View Earnings Release'},
+  {match:'ryder',note:'FY2026: Named Fortune\'s Most Innovative Companies (2nd consecutive year). $1.7B invested in tech since 2018. AI telematics cutting vehicle downtime 20%. 21M sq ft warehouse automation — 1,000+ autonomous robots deployed.',url:'https://newsroom.ryder.com/news/news-details/2026/Ryder-Named-to-Fortunes-Americas-Most-Innovative-Companies-List-for-Second-Consecutive-Year/default.aspx',lnk:'View Press Release'},
+  {match:'air canada',note:'FY2025: $2.9B capex; migrating legacy IT to cloud. AI-driven network optimization and predictive aircraft maintenance. Multi-year "New Frontiers" digital transformation strategy underway through 2027.',url:'https://www.aircanada.com/media/air-canada-reports-fourth-quarter-and-full-year-2025-financial-results/',lnk:'View Annual Results'},
+  {match:'sonic automotive',note:'Q1 2026 earnings: integrating AI into fixed ops service processes; targeting $100M/month fixed ops gross profit. EchoPark digital-first used vehicle brand expansion resuming in late 2026.',url:'https://ir.sonicautomotive.com/news-events/press-releases',lnk:'View IR Press Releases'},
+  {match:'food lion',note:'2025: Breaking ground on $860M automated distribution center using Ahold Delhaize technology. $484M invested to upgrade 153 stores across the Carolinas. FoodStorm order-management system deployed.',url:'https://www.grocerydive.com/news/food-lion-breaks-ground-distribution-center/810094/',lnk:'View Coverage'},
+  {match:'schnucks',note:'2025: Replaced all copper store infrastructure with private-line fiber. Deployed Domo AI and Data Products platform as enterprise reporting layer. Digital innovation includes electronic shelf tags, robots, and smart carts.',url:'https://www.domo.com/news/press/schnucks-builds-an-intelligent-retail-operation-on-domos-ai-and-data-products-platform',lnk:'View Case Study'},
+  {match:'follett',note:'2024–2025: Selected TCS for three-year cloud IT infrastructure and cybersecurity transformation. Deploying AI-driven managed services across hybrid cloud. New student experience platform launched at 15 pilot schools.',url:'https://www.tcs.com/who-we-are/newsroom/press-release/follett-higher-education-selects-tcs-build-future-ready-cloud-based-it-infrastructure',lnk:'View Press Release'},
+  {match:'staples',note:'2025: $300M annual digital transformation investment; AI-powered predictive procurement engine launched. Lenovo TruScale partnership to scale infrastructure for rapid growth; targeting $18.5B consolidated revenue.',url:'https://www.lenovo.com/us/en/case-studies-customer-success-stories/staples-tech-solutions/',lnk:'View Case Study'},
+  // ── PUBLIC — limited tech IR data ──────────────────────────
+  {match:'ventas',note:'Public REIT (NYSE: VTR) focused on senior housing and healthcare real estate. No specific technology infrastructure investment data found in recent 2025–2026 filings.',url:'https://ir.ventasreit.com/',lnk:'View IR Page'},
+  {match:'sun communities',note:'Public REIT (NYSE: SUI) focused on manufactured housing and RV communities. No specific technology infrastructure investment data found in recent filings.',url:'https://suncommunities.gcs-web.com/investor-overview/',lnk:'View IR Page'},
+  {match:'zumiez',note:'Public (NASDAQ: ZUMZ). FY2026 capex of $14–16M; primarily store-level investment. No significant standalone technology transformation initiative disclosed in recent filings.',url:'https://ir.zumiez.com/',lnk:'View IR Page'},
+  {match:'big 5 sporting',note:'Public (NASDAQ: BGFV). ~$11M capex; minimal technology-specific investment disclosed. 414 brick-and-mortar stores primarily in the western U.S.',url:'https://ir.big5corp.com/',lnk:'View IR Page'},
+  // ── PRIVATELY HELD ──────────────────────────────────────────
+  {match:'love\'s travel',note:'Privately held (family-owned) — no public investor relations documents.',url:'https://www.loves.com/',lnk:'Visit Website'},
+  {match:'winsupply',note:'Privately held — no public investor relations documents.',url:'https://www.winsupplyinc.com/',lnk:'Visit Website'},
+  {match:'thorntons',note:'Privately held (acquired by BP, 2021) — no standalone investor relations documents.',url:'https://www.mythorntons.com/',lnk:'Visit Website'},
+  {match:'paradies',note:'Privately held — no public investor relations documents.',url:'https://www.paradieslagardere.com/',lnk:'Visit Website'},
+  {match:'price chopper',note:'Privately held — no public investor relations documents.',url:'https://www.pricechopper.com/',lnk:'Visit Website'},
+  {match:'golub corp',note:'Privately held — no public investor relations documents.',url:'https://www.pricechopper.com/',lnk:'Visit Website'},
+  {match:'northern tool',note:'Privately held — no public investor relations documents.',url:'https://www.northerntool.com/',lnk:'Visit Website'},
+  {match:'enterprise car',note:'Privately held (Enterprise Holdings) — no public investor relations documents.',url:'https://www.enterpriseholdings.com/',lnk:'Visit Website'},
+  {match:'taco bueno',note:'Privately held — no public investor relations documents.',url:'https://tacobueno.com/',lnk:'Visit Website'},
+  {match:'peet\'s coffee',note:'Privately held (JAB Holding) — no public investor relations documents.',url:'https://www.peets.com/',lnk:'Visit Website'},
+  {match:'books-a-million',note:'Privately held (went private 2015) — no public investor relations documents.',url:'https://www.booksamillion.com/',lnk:'Visit Website'},
+  {match:'chuck e.',note:'Privately held (CEC Entertainment) — no public investor relations documents.',url:'https://www.chuckecheese.com/',lnk:'Visit Website'},
+  {match:'vallen',note:'Privately held — no public investor relations documents.',url:'https://www.vallen.com/',lnk:'Visit Website'},
+  {match:'reddy ice',note:'Privately held — no public investor relations documents.',url:'https://www.reddyice.com/',lnk:'Visit Website'},
+  {match:'99 cents',note:'Company closed all locations in April 2024 following bankruptcy filing. No active investor relations.',url:'',lnk:''},
+  {match:'ubreakifix',note:'Privately held (Asurion subsidiary) — no public investor relations documents.',url:'https://www.ubreakifix.com/',lnk:'Visit Website'},
+  {match:'bcbg',note:'Privately held — no public investor relations documents.',url:'https://www.bcbg.com/',lnk:'Visit Website'},
+  {match:'steak n shake',note:'Privately held (Biglari Holdings subsidiary) — no public investor relations documents.',url:'https://www.steaknshake.com/',lnk:'Visit Website'},
+  {match:'ruth\'s chris',note:'Privately held (acquired by Dine Brands, 2023) — no standalone investor relations documents.',url:'https://www.ruthschris.com/',lnk:'Visit Website'},
+  {match:'perkins restaurant',note:'Privately held — no public investor relations documents.',url:'https://www.perkinsrestaurants.com/',lnk:'Visit Website'},
+  {match:'vitamin shoppe',note:'Privately held — no public investor relations documents.',url:'https://www.vitaminshoppe.com/',lnk:'Visit Website'},
+  {match:'fred meyer jewelers',note:'Privately held (Kroger subsidiary) — no standalone investor relations documents.',url:'https://www.fredmeyerjewelers.com/',lnk:'Visit Website'},
+  {match:'white castle',note:'Privately held (family-owned since 1921) — no public investor relations documents.',url:'https://www.whitecastle.com/',lnk:'Visit Website'},
+  {match:'cost cutters',note:'Privately held — no public investor relations documents.',url:'https://www.costcutters.com/',lnk:'Visit Website'},
+  {match:'mattress warehouse',note:'Privately held — no public investor relations documents.',url:'https://www.mattresswarehouse.com/',lnk:'Visit Website'},
+  {match:'ben bridge',note:'Privately held (Berkshire Hathaway subsidiary) — no standalone investor relations documents.',url:'https://www.benbridge.com/',lnk:'Visit Website'},
+  {match:'pappas',note:'Privately held — no public investor relations documents.',url:'https://www.pappasrestaurants.com/',lnk:'Visit Website'},
+  {match:'tiffany',note:'Privately held (LVMH subsidiary since 2021) — no standalone investor relations documents.',url:'https://www.tiffany.com/',lnk:'Visit Website'},
+  {match:'vineyard vines',note:'Privately held — no public investor relations documents.',url:'https://www.vineyardvines.com/',lnk:'Visit Website'},
+  {match:'jiffy lube',note:'Privately held (Shell subsidiary) — no standalone investor relations documents.',url:'https://www.jiffylube.com/',lnk:'Visit Website'},
+  {match:'p.f. chang',note:'Privately held — no public investor relations documents.',url:'https://www.pfchangs.com/',lnk:'Visit Website'},
+  {match:'guitar center',note:'Privately held (Ares Management) — no public investor relations documents.',url:'https://www.guitarcenter.com/',lnk:'Visit Website'},
+  {match:'central transport',note:'Privately held — no public investor relations documents.',url:'https://www.centraltransportint.com/',lnk:'Visit Website'},
+  {match:'corner bakery',note:'Privately held — no public investor relations documents.',url:'https://www.cornerbakerycafe.com/',lnk:'Visit Website'},
+  {match:'roundy',note:'Privately held (Kroger subsidiary) — no standalone investor relations documents.',url:'https://www.kroger.com/',lnk:'Visit Website'},
+  {match:'hd supply',note:'Privately held (Home Depot subsidiary since 2020) — no standalone investor relations documents.',url:'https://www.hdsupply.com/',lnk:'Visit Website'},
+  {match:'godiva',note:'Privately held — no public investor relations documents.',url:'https://www.godiva.com/',lnk:'Visit Website'},
+  {match:'harbor freight',note:'Privately held — no public investor relations documents.',url:'https://www.harborfreight.com/',lnk:'Visit Website'},
+  {match:'covelli',note:'Privately held (Panera Bread franchisee) — no public investor relations documents.',url:'https://www.covelli.com/',lnk:'Visit Website'},
+  {match:'budget group',note:'Privately held — no public investor relations documents.',url:'',lnk:''},
+  {match:'tumi',note:'Privately held (LVMH subsidiary) — no standalone investor relations documents.',url:'https://www.tumi.com/',lnk:'Visit Website'},
+  {match:'waffle house',note:'Privately held (family-owned) — no public investor relations documents.',url:'https://www.wafflehouse.com/',lnk:'Visit Website'},
+  {match:'samsung america',note:'U.S. subsidiary of Samsung Electronics (KRX: 005930) — no standalone U.S. investor relations documents.',url:'https://www.samsung.com/us/',lnk:'Visit Website'},
+  {match:'smooth holding',note:'Privately held — no public investor relations documents.',url:'',lnk:''},
+  {match:'saks fifth avenue',note:'Privately held (Saks Global, in bankruptcy proceedings as of 2025) — no current investor relations documents.',url:'https://www.saksfifthavenue.com/',lnk:'Visit Website'},
+  {match:'giant food',note:'Privately held (Ahold Delhaize subsidiary) — no standalone investor relations documents.',url:'https://giantfood.com/',lnk:'Visit Website'},
+  {match:'veritiv',note:'Privately held (acquired by Clayton, Dubilier & Rice, 2023) — no public investor relations documents.',url:'https://www.veritivcorp.com/',lnk:'Visit Website'},
+];
+
+function getIRContext(company){
+  var c=(company||'').toLowerCase();
+  for(var i=0;i<IR_CONTEXT.length;i++){
+    if(c.indexOf(IR_CONTEXT[i].match)>=0)return IR_CONTEXT[i];
+  }
+  return null;
+}
+
+function irHtml(company,box){
+  var ir=getIRContext(company);
+  if(!ir)return box?'':'<span style="color:var(--muted2);font-size:11px">—</span>';
+  var link=ir.url&&ir.lnk?'<br><a class="ir-link" href="'+ir.url+'" target="_blank" rel="noopener">'+ir.lnk+' →</a>':'';
+  if(box)return '<div class="pitch-box">'+ir.note+link+'</div>';
+  return '<span class="pitch-td">'+ir.note+link+'</span>';
+}
 
 
 // ── GVIZ PARSINGG ────────────────────────────────────────────
@@ -520,7 +623,7 @@ function renderAll_(){
 
   var tb=document.getElementById('tbody-top10');tb.innerHTML='';
   D.accounts.slice(0,10).forEach(function(a,i){
-    tb.innerHTML+='<tr><td data-label="">'+(i+1)+'</td><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div><div class="co-name">'+a.company+'</div><div class="co-domain">'+a.domain+'</div></div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Rep" style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700;font-size:12px">'+a.rep+'</td><td data-label="Score">'+sp(a.score)+'</td><td data-label="WoW">'+wowHtml(a.wow_pct)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Branded">'+bar(a.intent_branded,90,'#009ADE')+'</td><td data-label="AI">'+bar(a.ai_readiness,71,'#3FB748')+'</td><td data-label="Actions">'+actions(a.company)+'</td></tr>';
+    tb.innerHTML+='<tr><td data-label="">'+(i+1)+'</td><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div><div class="co-name">'+a.company+'</div><div class="co-domain">'+a.domain+'</div></div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Rep" style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700;font-size:12px">'+a.rep+'</td><td data-label="Score">'+sp(a.score)+'</td><td data-label="WoW">'+wowHtml(a.wow_pct)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Branded">'+bar(a.intent_branded,90,'#009ADE')+'</td><td data-label="AI">'+bar(a.ai_readiness,71,'#3FB748')+'</td><td data-label="IR Intelligence">'+irHtml(a.company,false)+'</td><td data-label="Actions">'+actions(a.company)+'</td></tr>';
   });
 
   var ft=document.getElementById('five-tabs');ft.innerHTML='';
@@ -538,7 +641,7 @@ function loadFive(rep){
   if(btn){btn.style.background=col;btn.style.borderColor='transparent';btn.style.color='#fff';}
   var g=document.getElementById('five-grid');g.innerHTML='';
   (D.top5[rep]||[]).forEach(function(a,i){
-    g.innerHTML+='<div class="five-card"><div class="five-rank">'+(i+1)+'</div><div class="five-co-wrap">'+logo(a.domain,28).replace('co-logo','five-logo')+'<div><div class="five-co">'+a.company+'</div><div class="five-dm">'+a.domain+'</div></div></div><div class="five-signals">'+sp(a.score)+' '+ub(a.urgency)+' '+vtag(a.vertical)+(a.intent_branded>0?'<span style="font-size:11px;color:#009ADE;font-weight:700">Branded: '+a.intent_branded+'</span>':'')+'</div><div class="five-actions">'+actions(a.company)+'</div>'+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:8px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\""+" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button></div>";
+    g.innerHTML+='<div class="five-card"><div class="five-rank">'+(i+1)+'</div><div class="five-co-wrap">'+logo(a.domain,28).replace('co-logo','five-logo')+'<div><div class="five-co">'+a.company+'</div><div class="five-dm">'+a.domain+'</div></div></div><div class="five-signals">'+sp(a.score)+' '+ub(a.urgency)+' '+vtag(a.vertical)+(a.intent_branded>0?'<span style="font-size:11px;color:#009ADE;font-weight:700">Branded: '+a.intent_branded+'</span>':'')+'</div>'+irHtml(a.company,true)+'<div class="five-actions">'+actions(a.company)+'</div>'+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:8px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\""+" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button></div>";
   });
 }
 function loadDrill(rep){
@@ -548,7 +651,7 @@ function loadDrill(rep){
   var el=document.getElementById('drill-content');el.innerHTML='';
   (D.rep_top10[rep]||[]).forEach(function(a,i){
     var uid='dr-'+i+'-'+rep.replace(/ /g,'');
-    el.innerHTML+='<div class="acct-card"><div class="acct-hdr" onclick="toggleAcct(\''+uid+'\')"><div class="acct-rank" style="color:'+col+'">#'+(i+1)+'</div>'+logo(a.domain,28).replace('co-logo','acct-logo')+'<div class="acct-info"><div class="acct-co">'+a.company+'</div><div class="acct-dm">'+a.domain+'</div></div><div class="acct-sigs">'+sp(a.score)+' '+ub(a.urgency)+' '+vtag(a.vertical)+' '+wowHtml(a.wow_pct)+'</div><span class="expand-icon" id="icon-'+uid+'">▶</span></div><div class="acct-body" id="'+uid+'"><div class="sig-grid"><div class="sig-box"><div class="sig-val" style="color:var(--gold)">'+a.score+'</div><div class="sig-label">Hot Score</div></div><div class="sig-box"><div class="sig-val" style="color:'+(a.wow_pct>0?'var(--green)':'var(--red)')+'">'+( a.wow_pct>0?'+':'')+a.wow_pct.toFixed(1)+'%</div><div class="sig-label">WoW</div></div><div class="sig-box"><div class="sig-val" style="color:#97CAEB">'+a.intent_product+'</div><div class="sig-label">Product</div></div><div class="sig-box"><div class="sig-val" style="color:#009ADE">'+a.intent_branded+'</div><div class="sig-label">Branded</div></div><div class="sig-box"><div class="sig-val" style="color:var(--green)">'+a.ai_readiness+'</div><div class="sig-label">AI Ready</div></div><div class="sig-box"><div class="sig-val">'+a.ad_impressions.toLocaleString()+'</div><div class="sig-label">Impr.</div></div></div><div class="action-label">🎯 Actions</div>'+actions(a.company)+''+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:10px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\""+" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button></div></div>";
+    el.innerHTML+='<div class="acct-card"><div class="acct-hdr" onclick="toggleAcct(\''+uid+'\')"><div class="acct-rank" style="color:'+col+'">#'+(i+1)+'</div>'+logo(a.domain,28).replace('co-logo','acct-logo')+'<div class="acct-info"><div class="acct-co">'+a.company+'</div><div class="acct-dm">'+a.domain+'</div></div><div class="acct-sigs">'+sp(a.score)+' '+ub(a.urgency)+' '+vtag(a.vertical)+' '+wowHtml(a.wow_pct)+'</div><span class="expand-icon" id="icon-'+uid+'">▶</span></div><div class="acct-body" id="'+uid+'"><div class="sig-grid"><div class="sig-box"><div class="sig-val" style="color:var(--gold)">'+a.score+'</div><div class="sig-label">Hot Score</div></div><div class="sig-box"><div class="sig-val" style="color:'+(a.wow_pct>0?'var(--green)':'var(--red)')+'">'+( a.wow_pct>0?'+':'')+a.wow_pct.toFixed(1)+'%</div><div class="sig-label">WoW</div></div><div class="sig-box"><div class="sig-val" style="color:#97CAEB">'+a.intent_product+'</div><div class="sig-label">Product</div></div><div class="sig-box"><div class="sig-val" style="color:#009ADE">'+a.intent_branded+'</div><div class="sig-label">Branded</div></div><div class="sig-box"><div class="sig-val" style="color:var(--green)">'+a.ai_readiness+'</div><div class="sig-label">AI Ready</div></div><div class="sig-box"><div class="sig-val">'+a.ad_impressions.toLocaleString()+'</div><div class="sig-label">Impr.</div></div></div>'+irHtml(a.company,true)+'<div class="action-label">🎯 Actions</div>'+actions(a.company)+''+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:10px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\""+" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button></div></div>";
   });
 }
 function toggleAcct(id){var b=document.getElementById(id),ic=document.getElementById('icon-'+id);if(!b)return;var o=b.classList.toggle('open');if(ic)ic.classList.toggle('open',o);}
@@ -574,7 +677,7 @@ function renderAllTable(){
   var tb=document.getElementById('tbody-all');tb.innerHTML='';
   var page=allF.slice((allP-1)*PS,allP*PS);
   if(!page.length){tb.innerHTML='<tr><td colspan="11" class="empty">No results</td></tr>';return;}
-  page.forEach(function(a){tb.innerHTML+='<tr><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div><div class="co-name">'+a.company+'</div><div class="co-domain">'+a.domain+'</div></div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Rep" style="color:'+(RC[a.rep]||'#6b6b99')+';font-size:12px;font-weight:600">'+a.rep+'</td><td data-label="Score">'+sp(a.score)+'</td><td data-label="WoW">'+wowHtml(a.wow_pct)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Branded">'+bar(a.intent_branded,90,'#009ADE')+'</td><td data-label="Product">'+bar(a.intent_product,65,'#97CAEB')+'</td><td data-label="AI">'+bar(a.ai_readiness,71,'#3FB748')+'</td><td data-label="Actions">'+actions(a.company)+'</td></tr>';});
+  page.forEach(function(a){tb.innerHTML+='<tr><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div><div class="co-name">'+a.company+'</div><div class="co-domain">'+a.domain+'</div></div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Rep" style="color:'+(RC[a.rep]||'#6b6b99')+';font-size:12px;font-weight:600">'+a.rep+'</td><td data-label="Score">'+sp(a.score)+'</td><td data-label="WoW">'+wowHtml(a.wow_pct)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Branded">'+bar(a.intent_branded,90,'#009ADE')+'</td><td data-label="Product">'+bar(a.intent_product,65,'#97CAEB')+'</td><td data-label="AI">'+bar(a.ai_readiness,71,'#3FB748')+'</td><td data-label="IR Intelligence">'+irHtml(a.company,false)+'</td><td data-label="Actions">'+actions(a.company)+'</td></tr>';});
   document.getElementById('all-count').textContent=allF.length+' accounts';
   var mc=document.getElementById('all-modal-count');if(mc)mc.textContent=allF.length+' accounts';
   var tot=Math.ceil(allF.length/PS),pg=document.getElementById('pag-all');
@@ -587,7 +690,7 @@ function goP(p){allP=p;renderAllTable();window.scrollTo(0,0);}
 
 function renderMovers(){
   var el=document.getElementById('movers-list');el.innerHTML='';
-  D.movers.forEach(function(a){el.innerHTML+='<div class="mover-card"><div style="flex:1"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">'+logo(a.domain,28)+'<span style="font-weight:800;font-size:15px">'+a.company+'</span>'+ub(a.urgency)+vtag(a.vertical)+'</div><div style="font-size:12px;color:var(--muted);margin-bottom:8px">Rep: <span style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700">'+a.rep+'</span> · Score: '+sp(a.score)+'</div>'+actions(a.company)+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:8px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\"" +" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button>"+'</div><div class="mover-pct">▲'+a.wow_pct.toFixed(1)+'%<span>WoW</span></div></div>';});
+  D.movers.forEach(function(a){el.innerHTML+='<div class="mover-card"><div style="flex:1"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">'+logo(a.domain,28)+'<span style="font-weight:800;font-size:15px">'+a.company+'</span>'+ub(a.urgency)+vtag(a.vertical)+'</div><div style="font-size:12px;color:var(--muted);margin-bottom:8px">Rep: <span style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700">'+a.rep+'</span> · Score: '+sp(a.score)+'</div>'+irHtml(a.company,true)+actions(a.company)+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:8px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\"" +" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button>"+'</div><div class="mover-pct">▲'+a.wow_pct.toFixed(1)+'%<span>WoW</span></div></div>';});
 }
 function renderBranded(){
   document.getElementById('branded-banner').innerHTML='🎯 <strong>'+D.branded.length+' accounts</strong> have measurable branded search intent for "Scale Computing™." These buyers are in research mode — strike fast.';
