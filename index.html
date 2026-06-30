@@ -245,6 +245,12 @@ tr:hover td{background:rgba(0,154,222,0.03);}
 .pitch-td{font-size:11px;color:var(--muted);line-height:1.5;max-width:200px;}
 .ir-link{display:inline-block;margin-top:5px;font-size:10px;font-weight:700;color:var(--accent);text-decoration:none;letter-spacing:0.3px;}
 .ir-link:hover{text-decoration:underline;}
+.pa-tag{display:inline-flex;align-items:center;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:700;white-space:nowrap;margin:1px;}
+.pa-hypercore{background:rgba(0,154,222,0.1);color:#009ADE;border:1px solid rgba(0,154,222,0.25);}
+.pa-platform{background:rgba(25,79,144,0.12);color:#97CAEB;border:1px solid rgba(25,79,144,0.3);}
+.pa-fleet{background:rgba(210,222,36,0.08);color:#D2DE24;border:1px solid rgba(210,222,36,0.22);}
+.pa-acuvigil{background:rgba(247,141,45,0.08);color:#F78D2D;border:1px solid rgba(247,141,45,0.22);}
+.pa-connect{background:rgba(63,183,72,0.08);color:#3FB748;border:1px solid rgba(63,183,72,0.22);}
 </style>
 </head>
 <body>
@@ -292,7 +298,7 @@ tr:hover td{background:rgba(0,154,222,0.03);}
   <div class="rep-grid" id="rep-grid"></div>
   <div class="sh">Top 10 Accounts This Week</div>
   <div class="tbl-wrap"><div class="tbl-scroll"><table><thead><tr>
-    <th>#</th><th>Company</th><th>Vertical</th><th>Rep</th><th>Score</th><th>WoW%</th><th>Urgency</th><th>Branded</th><th>AI</th><th>IR Intelligence</th><th>Actions</th>
+    <th>#</th><th>Company</th><th>Vertical</th><th>Rep</th><th>Score</th><th>WoW%</th><th>Urgency</th><th>Product Area</th><th>Pitch</th><th>IR Intelligence</th><th>Actions</th>
   </tr></thead><tbody id="tbody-top10"></tbody></table></div></div>
 <div style="margin-top:14px;display:flex;justify-content:flex-end;"><button class="sam-btn" onclick="openAllModal()" style="font-size:12px;padding:8px 18px;">View All Accounts →</button></div>
 </div>
@@ -371,7 +377,7 @@ tr:hover td{background:rgba(0,154,222,0.03);}
     <span id="all-count" style="color:var(--muted);font-size:11px;white-space:nowrap"></span>
   </div>
   <div class="tbl-wrap"><div class="tbl-scroll"><table><thead><tr>
-    <th>Company</th><th>Vertical</th><th>Rep</th><th>Score</th><th>WoW%</th><th>Urgency</th><th>Branded</th><th>Product</th><th>AI</th><th>IR Intelligence</th><th>Actions</th>
+    <th>Company</th><th>Vertical</th><th>Rep</th><th>Score</th><th>WoW%</th><th>Urgency</th><th>Branded</th><th>Product</th><th>AI</th><th>Product Area</th><th>Pitch</th><th>IR Intelligence</th><th>Actions</th>
   </tr></thead><tbody id="tbody-all"></tbody></table></div></div>
   <div class="pag" id="pag-all"></div>
 
@@ -526,6 +532,96 @@ function irHtml(company,box){
 }
 
 
+// ── PRODUCT AREA CLASSIFICATION ──────────────────────────────
+var PRODUCT_LABELS = {
+  hypercore: 'SC//HyperCore™',
+  fleet:     'SC//Fleet Manager™',
+  platform:  'SC//Platform™',
+  acuvigil:  'SC//AcuVigil™',
+  connect:   'SC//Connect™'
+};
+
+function classifyProductAreas(a){
+  var co=(a.company||'').toLowerCase();
+  var v=(a.vertical||'').toLowerCase();
+  var areas=[];
+
+  // SC//HyperCore™ — virtualization/HCI (any meaningful intent or score signal)
+  if(a.intent_product>15||a.intent_branded>10||a.ai_readiness>25||a.score>=45)
+    areas.push('hypercore');
+
+  // SC//Fleet Manager™ — multi-site/distributed/franchise verticals
+  if(['retail','grocery','food & beverage','logistics & transportation','automotive','aviation & travel'].some(function(mv){return v===mv;})||
+     /\b(franchise|chain|multi.?site|branches|locations|stores\b)\b/.test(co))
+    areas.push('fleet');
+
+  // SC//Platform™ — edge compute: manufacturing, energy, industrial/field sites
+  if(v==='manufacturing & industrial'||v==='energy & utilities'||
+     /\b(edge|industrial|factory|plant|field.?site|oilfield|refiner)\b/.test(co))
+    areas.push('platform');
+
+  // SC//AcuVigil™ — managed network / NOC / monitoring
+  if(/\b(monitor|surveillance|managed.?service|msp\b|noc\b|soc\b|network.?ops)\b/.test(co))
+    areas.push('acuvigil');
+
+  // SC//Connect™ — SD-WAN / network / telecom / broadband
+  if(/\b(wan\b|sd.?wan|telecom|broadband|connectivity|fiber\b|isp\b)\b/.test(co))
+    areas.push('connect');
+
+  if(!areas.length)areas.push('hypercore');
+  return areas;
+}
+
+function productAreaHtml(areas,wrap){
+  var html=(areas||[]).map(function(k){return'<span class="pa-tag pa-'+k+'">'+(PRODUCT_LABELS[k]||k)+'</span>';}).join('');
+  return wrap?'<div style="display:flex;gap:3px;flex-wrap:wrap;margin-bottom:2px">'+html+'</div>':html;
+}
+
+function buildAccountPitch(a){
+  var ir=getIRContext(a.company);
+  var areas=a.product_areas||classifyProductAreas(a);
+  var s=a.score,b=a.intent_branded,p=a.intent_product,ai=a.ai_readiness;
+  var hasHypercore=areas.indexOf('hypercore')>=0;
+  var hasFleet=areas.indexOf('fleet')>=0;
+  var hasPlatform=areas.indexOf('platform')>=0;
+  var parts=[];
+
+  // IR hook — first meaningful sentence from IR data (skip boilerplate private-company notes)
+  if(ir&&ir.note){
+    var skip=/Privately held|no public investor|No specific|no standalone/i.test(ir.note);
+    if(!skip){
+      var first=ir.note.split(/\.\s+/)[0].trim();
+      if(first.length>30)parts.push(first+'.');
+    }
+  }
+
+  // Product + signal angle
+  if(hasHypercore&&ai>40&&s>=50){
+    parts.push('High AI readiness + active research — lead with SC//HyperCore™ as edge AI infrastructure, positioning against Nutanix/Broadcom on simplicity and total cost.');
+  } else if(b>30){
+    parts.push('Branded search intent confirmed — they\'re already evaluating Scale Computing by name. Lead with SC//HyperCore™ and book a discovery call now.');
+  } else if(hasFleet&&hasHypercore){
+    parts.push('Multi-site footprint signals orchestration opportunity — lead with SC//Fleet Manager™ + SC//HyperCore™ for centralized edge management and simplified virtualization across every location.');
+  } else if(hasFleet){
+    parts.push('Distributed operations signal SC//Fleet Manager™ — ask who manages edge infrastructure across locations today and whether it\'s centralized.');
+  } else if(hasPlatform){
+    parts.push('Industrial/edge compute fit — lead with SC//Platform™ for hardened, purpose-built infrastructure without data center complexity.');
+  } else if(p>25){
+    parts.push('Active HCI research in progress — get SC//HyperCore™ on the shortlist before it forms. Send a comparison vs. Nutanix or vSAN.');
+  } else {
+    parts.push('Lead with SC//HyperCore™ — all-in-one virtualization at the edge, no per-VM licensing, built for operational simplicity.');
+  }
+
+  return parts.join(' ');
+}
+
+function pitchHtml(a,box){
+  var txt=a.pitch||'';
+  if(!txt)return box?'':'<span style="color:var(--muted2);font-size:11px">—</span>';
+  if(box)return'<div class="pitch-box">'+txt+'</div>';
+  return'<span class="pitch-td">'+txt+'</span>';
+}
+
 // ── GVIZ PARSINGG ────────────────────────────────────────────
 function parseGvizResponse(data){
   if(!data||!data.table)throw new Error('Unexpected response format from Google Sheets.');
@@ -558,7 +654,11 @@ function processRawData(raw){
     var vertical=classifyVertical(company);
     var urgency=calcUrgency(score,wow_pct,ib,ip,ai);
     var priority=calcPriority(score,wow_pct,ib,ai,ip);
-    accounts.push({company,rep,domain,score,wow_pct,intent_product:ip,intent_branded:ib,ai_readiness:ai,ad_impressions:adI,ad_clicks:adC,exp_count:exp,last_score:last,vertical,urgency,priority});
+    var _acc={company,vertical,intent_product:ip,intent_branded:ib,ai_readiness:ai,score};
+    var product_areas=classifyProductAreas(_acc);
+    var _accFull={company,vertical,intent_product:ip,intent_branded:ib,ai_readiness:ai,score,urgency,product_areas};
+    var pitch=buildAccountPitch(_accFull);
+    accounts.push({company,rep,domain,score,wow_pct,intent_product:ip,intent_branded:ib,ai_readiness:ai,ad_impressions:adI,ad_clicks:adC,exp_count:exp,last_score:last,vertical,urgency,priority,product_areas,pitch});
   });
   accounts.sort(function(a,b){return b.score-a.score;});
   var repMap={};
@@ -623,7 +723,7 @@ function renderAll_(){
 
   var tb=document.getElementById('tbody-top10');tb.innerHTML='';
   D.accounts.slice(0,10).forEach(function(a,i){
-    tb.innerHTML+='<tr><td data-label="">'+(i+1)+'</td><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div><div class="co-name">'+a.company+'</div><div class="co-domain">'+a.domain+'</div></div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Rep" style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700;font-size:12px">'+a.rep+'</td><td data-label="Score">'+sp(a.score)+'</td><td data-label="WoW">'+wowHtml(a.wow_pct)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Branded">'+bar(a.intent_branded,90,'#009ADE')+'</td><td data-label="AI">'+bar(a.ai_readiness,71,'#3FB748')+'</td><td data-label="IR Intelligence">'+irHtml(a.company,false)+'</td><td data-label="Actions">'+actions(a.company)+'</td></tr>';
+    tb.innerHTML+='<tr><td data-label="">'+(i+1)+'</td><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div><div class="co-name">'+a.company+'</div><div class="co-domain">'+a.domain+'</div></div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Rep" style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700;font-size:12px">'+a.rep+'</td><td data-label="Score">'+sp(a.score)+'</td><td data-label="WoW">'+wowHtml(a.wow_pct)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Product Area">'+productAreaHtml(a.product_areas,true)+'</td><td data-label="Pitch">'+pitchHtml(a,false)+'</td><td data-label="IR Intelligence">'+irHtml(a.company,false)+'</td><td data-label="Actions">'+actions(a.company)+'</td></tr>';
   });
 
   var ft=document.getElementById('five-tabs');ft.innerHTML='';
@@ -641,7 +741,7 @@ function loadFive(rep){
   if(btn){btn.style.background=col;btn.style.borderColor='transparent';btn.style.color='#fff';}
   var g=document.getElementById('five-grid');g.innerHTML='';
   (D.top5[rep]||[]).forEach(function(a,i){
-    g.innerHTML+='<div class="five-card"><div class="five-rank">'+(i+1)+'</div><div class="five-co-wrap">'+logo(a.domain,28).replace('co-logo','five-logo')+'<div><div class="five-co">'+a.company+'</div><div class="five-dm">'+a.domain+'</div></div></div><div class="five-signals">'+sp(a.score)+' '+ub(a.urgency)+' '+vtag(a.vertical)+(a.intent_branded>0?'<span style="font-size:11px;color:#009ADE;font-weight:700">Branded: '+a.intent_branded+'</span>':'')+'</div>'+irHtml(a.company,true)+'<div class="five-actions">'+actions(a.company)+'</div>'+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:8px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\""+" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button></div>";
+    g.innerHTML+='<div class="five-card"><div class="five-rank">'+(i+1)+'</div><div class="five-co-wrap">'+logo(a.domain,28).replace('co-logo','five-logo')+'<div><div class="five-co">'+a.company+'</div><div class="five-dm">'+a.domain+'</div></div></div><div class="five-signals">'+sp(a.score)+' '+ub(a.urgency)+' '+vtag(a.vertical)+(a.intent_branded>0?'<span style="font-size:11px;color:#009ADE;font-weight:700">Branded: '+a.intent_branded+'</span>':'')+'</div>'+productAreaHtml(a.product_areas,true)+pitchHtml(a,true)+irHtml(a.company,true)+'<div class="five-actions">'+actions(a.company)+'</div>'+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:8px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\""+" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button></div>";
   });
 }
 function loadDrill(rep){
@@ -651,7 +751,7 @@ function loadDrill(rep){
   var el=document.getElementById('drill-content');el.innerHTML='';
   (D.rep_top10[rep]||[]).forEach(function(a,i){
     var uid='dr-'+i+'-'+rep.replace(/ /g,'');
-    el.innerHTML+='<div class="acct-card"><div class="acct-hdr" onclick="toggleAcct(\''+uid+'\')"><div class="acct-rank" style="color:'+col+'">#'+(i+1)+'</div>'+logo(a.domain,28).replace('co-logo','acct-logo')+'<div class="acct-info"><div class="acct-co">'+a.company+'</div><div class="acct-dm">'+a.domain+'</div></div><div class="acct-sigs">'+sp(a.score)+' '+ub(a.urgency)+' '+vtag(a.vertical)+' '+wowHtml(a.wow_pct)+'</div><span class="expand-icon" id="icon-'+uid+'">▶</span></div><div class="acct-body" id="'+uid+'"><div class="sig-grid"><div class="sig-box"><div class="sig-val" style="color:var(--gold)">'+a.score+'</div><div class="sig-label">Hot Score</div></div><div class="sig-box"><div class="sig-val" style="color:'+(a.wow_pct>0?'var(--green)':'var(--red)')+'">'+( a.wow_pct>0?'+':'')+a.wow_pct.toFixed(1)+'%</div><div class="sig-label">WoW</div></div><div class="sig-box"><div class="sig-val" style="color:#97CAEB">'+a.intent_product+'</div><div class="sig-label">Product</div></div><div class="sig-box"><div class="sig-val" style="color:#009ADE">'+a.intent_branded+'</div><div class="sig-label">Branded</div></div><div class="sig-box"><div class="sig-val" style="color:var(--green)">'+a.ai_readiness+'</div><div class="sig-label">AI Ready</div></div><div class="sig-box"><div class="sig-val">'+a.ad_impressions.toLocaleString()+'</div><div class="sig-label">Impr.</div></div></div>'+irHtml(a.company,true)+'<div class="action-label">🎯 Actions</div>'+actions(a.company)+''+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:10px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\""+" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button></div></div>";
+    el.innerHTML+='<div class="acct-card"><div class="acct-hdr" onclick="toggleAcct(\''+uid+'\')"><div class="acct-rank" style="color:'+col+'">#'+(i+1)+'</div>'+logo(a.domain,28).replace('co-logo','acct-logo')+'<div class="acct-info"><div class="acct-co">'+a.company+'</div><div class="acct-dm">'+a.domain+'</div></div><div class="acct-sigs">'+sp(a.score)+' '+ub(a.urgency)+' '+vtag(a.vertical)+' '+wowHtml(a.wow_pct)+'</div><span class="expand-icon" id="icon-'+uid+'">▶</span></div><div class="acct-body" id="'+uid+'"><div class="sig-grid"><div class="sig-box"><div class="sig-val" style="color:var(--gold)">'+a.score+'</div><div class="sig-label">Hot Score</div></div><div class="sig-box"><div class="sig-val" style="color:'+(a.wow_pct>0?'var(--green)':'var(--red)')+'">'+( a.wow_pct>0?'+':'')+a.wow_pct.toFixed(1)+'%</div><div class="sig-label">WoW</div></div><div class="sig-box"><div class="sig-val" style="color:#97CAEB">'+a.intent_product+'</div><div class="sig-label">Product</div></div><div class="sig-box"><div class="sig-val" style="color:#009ADE">'+a.intent_branded+'</div><div class="sig-label">Branded</div></div><div class="sig-box"><div class="sig-val" style="color:var(--green)">'+a.ai_readiness+'</div><div class="sig-label">AI Ready</div></div><div class="sig-box"><div class="sig-val">'+a.ad_impressions.toLocaleString()+'</div><div class="sig-label">Impr.</div></div></div>'+productAreaHtml(a.product_areas,true)+pitchHtml(a,true)+irHtml(a.company,true)+'<div class="action-label">🎯 Actions</div>'+actions(a.company)+''+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:10px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\""+" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button></div></div>";
   });
 }
 function toggleAcct(id){var b=document.getElementById(id),ic=document.getElementById('icon-'+id);if(!b)return;var o=b.classList.toggle('open');if(ic)ic.classList.toggle('open',o);}
@@ -676,8 +776,8 @@ function filterAll(){
 function renderAllTable(){
   var tb=document.getElementById('tbody-all');tb.innerHTML='';
   var page=allF.slice((allP-1)*PS,allP*PS);
-  if(!page.length){tb.innerHTML='<tr><td colspan="11" class="empty">No results</td></tr>';return;}
-  page.forEach(function(a){tb.innerHTML+='<tr><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div><div class="co-name">'+a.company+'</div><div class="co-domain">'+a.domain+'</div></div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Rep" style="color:'+(RC[a.rep]||'#6b6b99')+';font-size:12px;font-weight:600">'+a.rep+'</td><td data-label="Score">'+sp(a.score)+'</td><td data-label="WoW">'+wowHtml(a.wow_pct)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Branded">'+bar(a.intent_branded,90,'#009ADE')+'</td><td data-label="Product">'+bar(a.intent_product,65,'#97CAEB')+'</td><td data-label="AI">'+bar(a.ai_readiness,71,'#3FB748')+'</td><td data-label="IR Intelligence">'+irHtml(a.company,false)+'</td><td data-label="Actions">'+actions(a.company)+'</td></tr>';});
+  if(!page.length){tb.innerHTML='<tr><td colspan="13" class="empty">No results</td></tr>';return;}
+  page.forEach(function(a){tb.innerHTML+='<tr><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div><div class="co-name">'+a.company+'</div><div class="co-domain">'+a.domain+'</div></div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Rep" style="color:'+(RC[a.rep]||'#6b6b99')+';font-size:12px;font-weight:600">'+a.rep+'</td><td data-label="Score">'+sp(a.score)+'</td><td data-label="WoW">'+wowHtml(a.wow_pct)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Branded">'+bar(a.intent_branded,90,'#009ADE')+'</td><td data-label="Product">'+bar(a.intent_product,65,'#97CAEB')+'</td><td data-label="AI">'+bar(a.ai_readiness,71,'#3FB748')+'</td><td data-label="Product Area">'+productAreaHtml(a.product_areas,true)+'</td><td data-label="Pitch">'+pitchHtml(a,false)+'</td><td data-label="IR Intelligence">'+irHtml(a.company,false)+'</td><td data-label="Actions">'+actions(a.company)+'</td></tr>';});
   document.getElementById('all-count').textContent=allF.length+' accounts';
   var mc=document.getElementById('all-modal-count');if(mc)mc.textContent=allF.length+' accounts';
   var tot=Math.ceil(allF.length/PS),pg=document.getElementById('pag-all');
@@ -690,7 +790,7 @@ function goP(p){allP=p;renderAllTable();window.scrollTo(0,0);}
 
 function renderMovers(){
   var el=document.getElementById('movers-list');el.innerHTML='';
-  D.movers.forEach(function(a){el.innerHTML+='<div class="mover-card"><div style="flex:1"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">'+logo(a.domain,28)+'<span style="font-weight:800;font-size:15px">'+a.company+'</span>'+ub(a.urgency)+vtag(a.vertical)+'</div><div style="font-size:12px;color:var(--muted);margin-bottom:8px">Rep: <span style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700">'+a.rep+'</span> · Score: '+sp(a.score)+'</div>'+irHtml(a.company,true)+actions(a.company)+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:8px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\"" +" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button>"+'</div><div class="mover-pct">▲'+a.wow_pct.toFixed(1)+'%<span>WoW</span></div></div>';});
+  D.movers.forEach(function(a){el.innerHTML+='<div class="mover-card"><div style="flex:1"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">'+logo(a.domain,28)+'<span style="font-weight:800;font-size:15px">'+a.company+'</span>'+ub(a.urgency)+vtag(a.vertical)+'</div><div style="font-size:12px;color:var(--muted);margin-bottom:8px">Rep: <span style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700">'+a.rep+'</span> · Score: '+sp(a.score)+'</div>'+productAreaHtml(a.product_areas,true)+pitchHtml(a,true)+irHtml(a.company,true)+actions(a.company)+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:8px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\"" +" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button>"+'</div><div class="mover-pct">▲'+a.wow_pct.toFixed(1)+'%<span>WoW</span></div></div>';});
 }
 function renderBranded(){
   document.getElementById('branded-banner').innerHTML='🎯 <strong>'+D.branded.length+' accounts</strong> have measurable branded search intent for "Scale Computing™." These buyers are in research mode — strike fast.';
