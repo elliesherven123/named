@@ -377,7 +377,7 @@ tr:hover td{background:rgba(0,154,222,0.03);}
     <span id="all-count" style="color:var(--muted);font-size:11px;white-space:nowrap"></span>
   </div>
   <div class="tbl-wrap"><div class="tbl-scroll"><table><thead><tr>
-    <th>Company</th><th>Vertical</th><th>Rep</th><th>Score</th><th>WoW%</th><th>Urgency</th><th>Branded</th><th>Product</th><th>AI</th><th>Product Area</th><th>Pitch</th><th>IR Intelligence</th><th>Actions</th>
+    <th>Company</th><th>Vertical</th><th>Rep</th><th>Score</th><th>WoW%</th><th>Urgency</th><th>Product Area</th><th>Pitch</th><th>IR Intelligence</th><th>Actions</th>
   </tr></thead><tbody id="tbody-all"></tbody></table></div></div>
   <div class="pag" id="pag-all"></div>
 
@@ -849,8 +849,8 @@ function filterAll(){
 function renderAllTable(){
   var tb=document.getElementById('tbody-all');tb.innerHTML='';
   var page=allF.slice((allP-1)*PS,allP*PS);
-  if(!page.length){tb.innerHTML='<tr><td colspan="13" class="empty">No results</td></tr>';return;}
-  page.forEach(function(a){tb.innerHTML+='<tr><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div><div class="co-name">'+a.company+'</div><div class="co-domain">'+a.domain+'</div></div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Rep" style="color:'+(RC[a.rep]||'#6b6b99')+';font-size:12px;font-weight:600">'+a.rep+'</td><td data-label="Score">'+sp(a.score)+'</td><td data-label="WoW">'+wowHtml(a.wow_pct)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Branded">'+bar(a.intent_branded,90,'#009ADE')+'</td><td data-label="Product">'+bar(a.intent_product,65,'#97CAEB')+'</td><td data-label="AI">'+bar(a.ai_readiness,71,'#3FB748')+'</td><td data-label="Product Area">'+productAreaHtml(a.product_areas,true)+'</td><td data-label="Pitch">'+pitchHtml(a,false)+'</td><td data-label="IR Intelligence">'+irHtml(a.company,false)+'</td><td data-label="Actions">'+actions(a.company)+'</td></tr>';});
+  if(!page.length){tb.innerHTML='<tr><td colspan="10" class="empty">No results</td></tr>';return;}
+  page.forEach(function(a){tb.innerHTML+='<tr><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div><div class="co-name">'+a.company+'</div><div class="co-domain">'+a.domain+'</div></div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Rep" style="color:'+(RC[a.rep]||'#6b6b99')+';font-size:12px;font-weight:600">'+a.rep+'</td><td data-label="Score">'+sp(a.score)+'</td><td data-label="WoW">'+wowHtml(a.wow_pct)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Product Area">'+productAreaHtml(a.product_areas,true)+'</td><td data-label="Pitch">'+pitchHtml(a,false)+'</td><td data-label="IR Intelligence">'+irHtml(a.company,false)+'</td><td data-label="Actions">'+actions(a.company)+'</td></tr>';});
   document.getElementById('all-count').textContent=allF.length+' accounts';
   var mc=document.getElementById('all-modal-count');if(mc)mc.textContent=allF.length+' accounts';
   var tot=Math.ceil(allF.length/PS),pg=document.getElementById('pag-all');
