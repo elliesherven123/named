@@ -247,10 +247,12 @@ tr:hover td{background:rgba(0,154,222,0.03);}
 .ir-link:hover{text-decoration:underline;}
 .pa-tag{display:inline-flex;align-items:center;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:700;white-space:nowrap;margin:1px;}
 .pa-hypercore{background:rgba(0,154,222,0.1);color:#009ADE;border:1px solid rgba(0,154,222,0.25);}
-.pa-platform{background:rgba(25,79,144,0.12);color:#97CAEB;border:1px solid rgba(25,79,144,0.3);}
-.pa-fleet{background:rgba(210,222,36,0.08);color:#D2DE24;border:1px solid rgba(210,222,36,0.22);}
+.pa-reliant{background:rgba(25,79,144,0.12);color:#97CAEB;border:1px solid rgba(25,79,144,0.3);}
 .pa-acuvigil{background:rgba(247,141,45,0.08);color:#F78D2D;border:1px solid rgba(247,141,45,0.22);}
 .pa-connect{background:rgba(63,183,72,0.08);color:#3FB748;border:1px solid rgba(63,183,72,0.22);}
+.pa-vmware{background:rgba(220,38,38,0.08);color:#dc2626;border:1px solid rgba(220,38,38,0.25);}
+.pa-nutanix{background:rgba(220,38,38,0.08);color:#dc2626;border:1px solid rgba(220,38,38,0.25);}
+.pa-branded{background:rgba(250,204,21,0.10);color:#facc15;border:1px solid rgba(250,204,21,0.28);}
 </style>
 </head>
 <body>
@@ -536,32 +538,45 @@ function irHtml(company,box){
 // ── PRODUCT AREA CLASSIFICATION ──────────────────────────────
 var PRODUCT_LABELS = {
   hypercore: 'SC//HyperCore™',
-  fleet:     'SC//Fleet Manager™',
-  platform:  'SC//Platform™',
+  reliant:   'SC//Reliant™',
   acuvigil:  'SC//AcuVigil™',
-  connect:   'SC//Connect™'
+  connect:   'SC//Connect™',
+  vmware:    'Competitor: VMware',
+  nutanix:   'Competitor: Nutanix',
+  branded:   'Branded Keywords'
 };
 
 // Cluster keyword sets — sourced from Product Topic Intent Report
-// Updated 7/2026: HCIA, Cloud Infrastructure, Air-Gapped Backup, and Cloud Storage
-// removed from clusters per keyword mapping review (too generic, causing false-positive
-// cluster hits). Cluster 5 (SC//Connect — SD-WAN/SASE, ex-Adaptiv Networks) added.
+// Updated 7/2026 to the 7-cluster taxonomy:
+//   1: SC//HyperCore - Commercial   2: SC//HyperCore - At the Edge (tag: SC//Reliant)
+//   3: SC//AcuVigil                 4: SC//Connect
+//   5: Competitor - VMware          6: Competitor - Nutanix
+//   7: Branded Keywords
+// HCIA, Cloud Infrastructure, Air-Gapped Backup, and Cloud Storage stay excluded
+// (too generic, caused false-positive cluster hits). VMware/Nutanix/SimpliVity were
+// pulled out of Cluster 1 into their own competitor clusters (5,6) so they can render
+// as standalone Product Area tags instead of being buried inside HyperCore.
 var CLUSTER_KEYWORDS = {
-  1:['hyper-converged infrastructure','converged infrastructure','server virtualization','virtualization','virtual machines','bare-metal hypervisor','native hypervisor','virtual desktop infrastructure','vdi','virtual desktops','desktop as a service','daas','thin client','zero client','vmware','vmware esx','vmware cloud','nutanix','simplivity'],
-  2:['edge computing','edge ai','fog computing','internet of things','iot','industrial internet of things','smart retail','connected retail','hybrid cloud','multicloud','private cloud','cloud migration','cloud repatriation','cloud provisioning','software-defined infrastructure','high performance computing','gpu clusters'],
-  3:['data protection','backup and recovery','backup software','cloud backup','backup as a service','baas','disaster recovery','business continuity','high availability','fault tolerance','recovery point objective','rpo','enterprise storage','storage area networks','san','network attached storage','nas','block storage','disk storage','raid','ransomware'],
-  4:['it infrastructure','it operations','data center management','data center infrastructure management','dcim','server management','infrastructure as code','iac','infrastructure provisioning','automated provisioning','zero touch provisioning','ztp','container orchestration','containerization','containers','kubernetes','ansible','hashicorp terraform','terraform','software deployment','deployment automation','pci compliance','network security','information security','penetration testing','vulnerability assessment','vulnerability management','managed security services','total cost of ownership','tco'],
-  5:['sd-wan','sd wan','sase','secure access service edge','wan optimization','mpls','branch connectivity','branch office connectivity','remote connectivity','failover','edge networking']
+  1:['hyper-converged infrastructure','converged infrastructure','server virtualization','virtualization','virtual machines','bare-metal hypervisor','native hypervisor','virtual desktop infrastructure','vdi','virtual desktops','desktop as a service','daas','thin client','zero client','data protection','backup and recovery','backup software','cloud backup','backup as a service','baas','disaster recovery','business continuity','high availability','fault tolerance','recovery point objective','rpo','enterprise storage','storage area networks','san','network attached storage','nas','block storage','disk storage','raid','ransomware','it infrastructure','it operations','data center management','data center infrastructure management','dcim','server management','infrastructure as code','iac','infrastructure provisioning','automated provisioning','container orchestration','containerization','containers','kubernetes','ansible','hashicorp terraform','terraform','software deployment','deployment automation','total cost of ownership','tco'],
+  2:['edge computing','edge ai','fog computing','internet of things','iot','industrial internet of things','smart retail','connected retail','hybrid cloud','multicloud','private cloud','cloud migration','cloud repatriation','cloud provisioning','software-defined infrastructure','high performance computing','gpu clusters','zero touch provisioning','ztp'],
+  3:['pci compliance','network security','information security','penetration testing','vulnerability assessment','vulnerability management','managed security services'],
+  4:['sd-wan','sd wan','sase','secure access service edge','wan optimization','mpls','branch connectivity','branch office connectivity','remote connectivity','failover','edge networking'],
+  5:['vmware','vmware esx','vmware cloud','vmware hci','vmware vdi','vmware alternative','vmware competitor','vmware hyper converged'],
+  6:['nutanix','simplivity'],
+  7:['scale computing','scalecomputing','scale hypercore','scale computing hypervisor']
 };
-var CLUSTER_TO_PRODUCTS = {1:['hypercore'],2:['platform','fleet'],3:['hypercore'],4:['hypercore','acuvigil'],5:['connect']};
+var CLUSTER_TO_PRODUCTS = {1:['hypercore'],2:['reliant'],3:['acuvigil'],4:['connect'],5:['vmware'],6:['nutanix'],7:['branded']};
 
-function detectCluster(topicStr){
-  if(!topicStr)return null;
+// Returns every cluster (1-7) whose keywords appear in the topic string — an account can
+// legitimately hit more than one at once (e.g. core HyperCore research + a VMware mention).
+function detectClusters(topicStr){
+  if(!topicStr)return[];
   var t=topicStr.toLowerCase();
-  for(var c=1;c<=5;c++){
-    if(CLUSTER_KEYWORDS[c].some(function(kw){return t.indexOf(kw)>=0;}))return c;
+  var hits=[];
+  for(var c=1;c<=7;c++){
+    if(CLUSTER_KEYWORDS[c].some(function(kw){return t.indexOf(kw)>=0;}))hits.push(c);
   }
-  return null;
+  return hits;
 }
 
 function classifyProductAreas(a){
@@ -569,25 +584,25 @@ function classifyProductAreas(a){
   var co=(a.company||'').toLowerCase();
   var v=(a.vertical||'').toLowerCase();
 
-  // Primary: keyword cluster from Column K (Product Topic Cluster Keywords)
-  var cluster=a.topic_kw?detectCluster(a.topic_kw):null;
-  if(cluster)(CLUSTER_TO_PRODUCTS[cluster]||[]).forEach(function(p){areas[p]=true;});
+  // Primary: keyword clusters from Column K (Product Topic Cluster Keywords)
+  var hits=a.topic_kw?detectClusters(a.topic_kw):[];
+  hits.forEach(function(c){(CLUSTER_TO_PRODUCTS[c]||[]).forEach(function(p){areas[p]=true;});});
 
   // Secondary: vertical + company name keywords
   if(/\b(wan\b|sd.?wan|telecom|broadband|connectivity|fiber\b|isp\b)\b/.test(co))areas.connect=true;
   if(/\b(monitor|surveillance|managed.?service|msp\b|noc\b|soc\b|network.?ops)\b/.test(co))areas.acuvigil=true;
-  if(['retail','grocery','food & beverage','logistics & transportation','automotive','aviation & travel'].some(function(mv){return v===mv;})||
-     /\b(franchise|chain|multi.?site|branches|locations|stores\b)\b/.test(co))areas.fleet=true;
   if(v==='manufacturing & industrial'||v==='energy & utilities'||
-     /\b(edge|industrial|factory|plant|field.?site|oilfield|refiner)\b/.test(co))areas.platform=true;
+     /\b(edge|industrial|factory|plant|field.?site|oilfield|refiner)\b/.test(co))areas.reliant=true;
 
-  // Tertiary: score/intent signals — only if nothing else fired
-  if(!Object.keys(areas).length){
-    if(a.intent_product>15||a.intent_branded>10||a.ai_readiness>25||a.score>=45)areas.hypercore=true;
-  }
+  // Tertiary: score/intent signals — only if no core product line has fired yet
+  var hasProduct=areas.hypercore||areas.reliant||areas.acuvigil||areas.connect;
+  if(!hasProduct&&(a.intent_product>15||a.intent_branded>10||a.ai_readiness>25||a.score>=45))areas.hypercore=true;
+  if(!(areas.hypercore||areas.reliant||areas.acuvigil||areas.connect))areas.hypercore=true;
 
-  if(!Object.keys(areas).length)areas.hypercore=true;
-  var order=['hypercore','fleet','platform','connect','acuvigil'];
+  // Overlay: a strong numeric Branded Intent score reinforces the keyword-based Branded tag
+  if(a.intent_branded>30)areas.branded=true;
+
+  var order=['hypercore','reliant','acuvigil','connect','vmware','nutanix','branded'];
   return order.filter(function(k){return areas[k];});
 }
 
@@ -599,10 +614,14 @@ function productAreaHtml(areas,wrap){
 function buildAccountPitch(a){
   var ir=getIRContext(a.company);
   var areas=a.product_areas||classifyProductAreas(a);
-  var cluster=a.topic_kw?detectCluster(a.topic_kw):null;
+  var hits=a.topic_kw?detectClusters(a.topic_kw):[];
   var s=a.score,b=a.intent_branded,p=a.intent_product,ai=a.ai_readiness;
-  var hasFleet=areas.indexOf('fleet')>=0;
-  var hasPlatform=areas.indexOf('platform')>=0;
+  var hasReliant=areas.indexOf('reliant')>=0;
+  var hasVMware=hits.indexOf(5)>=0;
+  var hasNutanix=hits.indexOf(6)>=0;
+  var hasBrandedKw=hits.indexOf(7)>=0;
+  var competitor=(hasVMware&&hasNutanix)?'VMware and Nutanix':hasVMware?'VMware':hasNutanix?'Nutanix':null;
+  var productCluster=[1,2,3,4].filter(function(c){return hits.indexOf(c)>=0;})[0];
 
   // Extract IR context — full note if meaningful, empty string if boilerplate
   var irNote='';
@@ -615,79 +634,47 @@ function buildAccountPitch(a){
 
   var pitch='';
 
-  // Cluster-specific pitch — IR context woven into the product recommendation
-  if(cluster===1){
-    if(hasFleet){
+  // Cluster-specific pitch — IR context and competitor context woven into the recommendation
+  if(productCluster===1){
+    var compAdd1=competitor?' Position this as a '+competitor+' displacement opportunity on licensing simplicity and total cost of ownership.':'';
+    if(hasReliant){
       pitch=irFirst
-        ?irFirst+'. Active HCI research across a multi-site footprint — lead with SC//HyperCore™ as the VMware and Nutanix displacement story, paired with SC//Fleet Manager™ to centralize management across all locations in one pane of glass.'
-        :'Active HCI research across a multi-site footprint — lead with SC//HyperCore™ as the VMware and Nutanix displacement story, paired with SC//Fleet Manager™ to centralize management across all locations.';
-    } else if(hasPlatform){
-      pitch=irFirst
-        ?irFirst+'. HCI and virtualization research with an edge compute fit — position SC//HyperCore™ against VMware and Nutanix on simplicity and licensing cost, and layer in SC//Platform™ for hardened compute at the industrial edge.'
-        :'HCI research with an edge compute angle — position SC//HyperCore™ against VMware and Nutanix on simplicity and licensing cost, and layer in SC//Platform™ for purpose-built compute at the industrial edge.';
+        ?irFirst+'. HCI and virtualization research with an edge compute fit — lead with SC//HyperCore™ on simplicity and total cost of ownership, and layer in SC//Reliant™ for hardened compute at the industrial edge.'+compAdd1
+        :'HCI research with an edge compute angle — lead with SC//HyperCore™ on simplicity and total cost of ownership, and layer in SC//Reliant™ for purpose-built compute at the industrial edge.'+compAdd1;
     } else {
       pitch=irFirst
-        ?irFirst+'. With active HCI and virtualization research underway, this is a prime VMware and Nutanix displacement window — lead with SC//HyperCore™ on licensing simplicity, edge-native design, and total cost of ownership.'
-        :'Active HCI and virtualization research confirmed — prime VMware and Nutanix displacement window. Lead with SC//HyperCore™ on licensing simplicity, edge-native design, and total cost of ownership.';
+        ?irFirst+'. Active HCI, virtualization, and infrastructure research underway — lead with SC//HyperCore™ on simplified operations and total cost of ownership.'+compAdd1
+        :'Active HCI, virtualization, and infrastructure research detected — lead with SC//HyperCore™ on simplified operations and total cost of ownership.'+compAdd1;
     }
-  } else if(cluster===2){
-    if(hasFleet){
-      pitch=irFirst
-        ?irFirst+'. Their edge and remote infrastructure research maps directly to SC//Platform™ for purpose-built edge compute and SC//Fleet Manager™ for centralized orchestration — lead with the distributed site management story.'
-        :'Edge computing and remote infrastructure research signals — lead with SC//Platform™ for purpose-built edge compute and SC//Fleet Manager™ for centralized orchestration across distributed sites.';
-    } else {
-      pitch=irFirst
-        ?irFirst+'. Edge and hybrid cloud research signals a real infrastructure conversation — lead with SC//Platform™ as the purpose-built solution for edge and remote environments.'
-        :'Edge and hybrid cloud research signals — lead with SC//Platform™ as a purpose-built solution for edge and remote infrastructure.';
-    }
-  } else if(cluster===3){
-    if(hasFleet){
-      pitch=irFirst
-        ?irFirst+'. Backup and DR research across a distributed footprint — lead with SC//HyperCore™\'s built-in data protection and air-gapped backup, paired with SC//Fleet Manager™ to manage resilience across every site from one place.'
-        :'Backup and DR research across a distributed footprint — lead with SC//HyperCore™\'s built-in data protection and air-gapped backup, paired with SC//Fleet Manager™ for centralized resilience management.';
-    } else {
-      pitch=irFirst
-        ?irFirst+'. Backup, DR, and ransomware research makes this a strong data protection conversation — lead with SC//HyperCore™\'s built-in recovery, air-gapped backup, and simplified resilience across the infrastructure layer.'
-        :'Backup, DR, and ransomware resilience research detected — lead with SC//HyperCore™\'s built-in data protection, instant recovery, and air-gapped backup capabilities.';
-    }
-  } else if(cluster===4){
-    var acuvigilAdd=areas.indexOf('acuvigil')>=0?' Pair with SC//AcuVigil™ for managed network visibility and compliance readiness.':'';
-    if(hasFleet){
-      pitch=irFirst
-        ?irFirst+'. IT ops research across a multi-site environment — lead with SC//HyperCore™ for simplified management and SC//Fleet Manager™ for centralized control across all locations.'+acuvigilAdd
-        :'IT ops and cost research across a distributed footprint — lead with SC//HyperCore™ for simplified management and SC//Fleet Manager™ for centralized control across all sites.'+acuvigilAdd;
-    } else {
-      pitch=irFirst
-        ?irFirst+'. IT ops and cost optimization research signals a real infrastructure conversation — lead with SC//HyperCore™ for simplified management and reduced total cost of ownership.'+acuvigilAdd
-        :'IT ops and cost optimization research signals — lead with SC//HyperCore™ for infrastructure simplification and reduced total cost of ownership.'+acuvigilAdd;
-    }
-  } else if(cluster===5){
-    if(hasFleet){
-      pitch=irFirst
-        ?irFirst+'. SD-WAN/SASE research across a multi-site footprint — lead with SC//Connect™ for branch and remote connectivity, paired with SC//Fleet Manager™ to manage every site\'s network from one place.'
-        :'SD-WAN/SASE research across a multi-site footprint — lead with SC//Connect™ for branch and remote connectivity, paired with SC//Fleet Manager™ for centralized site management.';
-    } else {
-      pitch=irFirst
-        ?irFirst+'. Active SD-WAN/SASE and branch connectivity research — lead with SC//Connect™ on failover reliability and MPLS displacement economics.'
-        :'SD-WAN/SASE and branch connectivity research detected — lead with SC//Connect™ on failover reliability and MPLS displacement economics.';
-    }
+  } else if(productCluster===2){
+    pitch=irFirst
+      ?irFirst+'. Edge and hybrid cloud research signals a real infrastructure conversation — lead with SC//Reliant™ as the purpose-built solution for edge and remote environments.'
+      :'Edge and hybrid cloud research signals — lead with SC//Reliant™ as a purpose-built solution for edge and remote infrastructure.';
+  } else if(productCluster===3){
+    pitch=irFirst
+      ?irFirst+'. PCI compliance and network security research signals a managed services conversation — lead with SC//AcuVigil™ for managed network visibility and compliance readiness.'
+      :'PCI compliance and network security research detected — lead with SC//AcuVigil™ for managed network visibility and compliance readiness.';
+  } else if(productCluster===4){
+    pitch=irFirst
+      ?irFirst+'. Active SD-WAN/SASE and branch connectivity research — lead with SC//Connect™ on failover reliability and MPLS displacement economics.'
+      :'SD-WAN/SASE and branch connectivity research detected — lead with SC//Connect™ on failover reliability and MPLS displacement economics.';
+  } else if(hasBrandedKw||b>30){
+    pitch=irFirst
+      ?irFirst+'. They\'re already researching Scale Computing by name — skip the nurture sequence, lead with SC//HyperCore™, and book a discovery call now.'
+      :'Branded search intent confirmed — they\'re already evaluating Scale Computing by name. Lead with SC//HyperCore™ and book a discovery call now.';
+  } else if(competitor){
+    pitch=irFirst
+      ?irFirst+'. Actively comparing vendors against '+competitor+' — lead with SC//HyperCore™ on licensing simplicity and total cost of ownership, and ask for a head-to-head discovery call.'
+      :'Actively comparing vendors against '+competitor+' — lead with SC//HyperCore™ on licensing simplicity and total cost of ownership, and ask for a head-to-head discovery call.';
   // Fallback: signal-based angles when no cluster keyword data is present
   } else if(ai>40&&s>=50){
     pitch=irFirst
       ?irFirst+'. High AI readiness on top of this investment trajectory makes SC//HyperCore™ a strong fit — position it as purpose-built edge AI infrastructure for simplified operations at scale.'
       :'High AI readiness + active research — lead with SC//HyperCore™ as purpose-built edge AI infrastructure for simplified operations at scale.';
-  } else if(b>30){
+  } else if(hasReliant){
     pitch=irFirst
-      ?irFirst+'. They\'re already researching Scale Computing by name — skip the nurture sequence, lead with SC//HyperCore™, and book a discovery call now.'
-      :'Branded search intent confirmed — they\'re already evaluating Scale Computing by name. Lead with SC//HyperCore™ and book a discovery call now.';
-  } else if(hasFleet){
-    pitch=irFirst
-      ?irFirst+'. Multi-site footprint maps well to SC//Fleet Manager™ + SC//HyperCore™ — lead with centralized edge management and simplified virtualization across every location.'
-      :'Multi-site footprint signals orchestration opportunity — lead with SC//Fleet Manager™ + SC//HyperCore™ for centralized edge management and simplified virtualization across every location.';
-  } else if(hasPlatform){
-    pitch=irFirst
-      ?irFirst+'. Industrial/edge compute fit — SC//Platform™ delivers hardened, purpose-built infrastructure without data center complexity or overhead.'
-      :'Industrial/edge compute fit — lead with SC//Platform™ for hardened, purpose-built infrastructure without data center complexity.';
+      ?irFirst+'. Industrial/edge compute fit — SC//Reliant™ delivers hardened, purpose-built infrastructure without data center complexity or overhead.'
+      :'Industrial/edge compute fit — lead with SC//Reliant™ for hardened, purpose-built infrastructure without data center complexity.';
   } else if(p>25){
     pitch=irFirst
       ?irFirst+'. Active HCI research in progress — lead with SC//HyperCore™ and get on the shortlist before it forms. Ask for a discovery call.'
