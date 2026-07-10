@@ -543,18 +543,22 @@ var PRODUCT_LABELS = {
 };
 
 // Cluster keyword sets — sourced from Product Topic Intent Report
+// Updated 7/2026: HCIA, Cloud Infrastructure, Air-Gapped Backup, and Cloud Storage
+// removed from clusters per keyword mapping review (too generic, causing false-positive
+// cluster hits). Cluster 5 (SC//Connect — SD-WAN/SASE, ex-Adaptiv Networks) added.
 var CLUSTER_KEYWORDS = {
-  1:['hyper-converged infrastructure','hcia','hyper-converged infrastructure appliance','converged infrastructure','server virtualization','virtualization','virtual machines','bare-metal hypervisor','native hypervisor','virtual desktop infrastructure','vdi','virtual desktops','desktop as a service','daas','thin client','zero client','vmware','vmware esx','vmware cloud','nutanix','simplivity'],
-  2:['edge computing','edge ai','fog computing','internet of things','iot','industrial internet of things','smart retail','connected retail','cloud infrastructure','hybrid cloud','multicloud','private cloud','cloud migration','cloud repatriation','cloud provisioning','software-defined infrastructure','high performance computing','gpu clusters'],
-  3:['data protection','backup and recovery','backup software','cloud backup','backup as a service','baas','air-gapped backup','disaster recovery','business continuity','high availability','fault tolerance','recovery point objective','rpo','cloud storage','enterprise storage','storage area networks','san','network attached storage','nas','block storage','disk storage','raid','ransomware'],
-  4:['it infrastructure','it operations','data center management','data center infrastructure management','dcim','server management','infrastructure as code','iac','infrastructure provisioning','automated provisioning','zero touch provisioning','ztp','container orchestration','containerization','containers','kubernetes','ansible','hashicorp terraform','terraform','software deployment','deployment automation','pci compliance','network security','information security','penetration testing','vulnerability assessment','vulnerability management','managed security services','total cost of ownership','tco']
+  1:['hyper-converged infrastructure','converged infrastructure','server virtualization','virtualization','virtual machines','bare-metal hypervisor','native hypervisor','virtual desktop infrastructure','vdi','virtual desktops','desktop as a service','daas','thin client','zero client','vmware','vmware esx','vmware cloud','nutanix','simplivity'],
+  2:['edge computing','edge ai','fog computing','internet of things','iot','industrial internet of things','smart retail','connected retail','hybrid cloud','multicloud','private cloud','cloud migration','cloud repatriation','cloud provisioning','software-defined infrastructure','high performance computing','gpu clusters'],
+  3:['data protection','backup and recovery','backup software','cloud backup','backup as a service','baas','disaster recovery','business continuity','high availability','fault tolerance','recovery point objective','rpo','enterprise storage','storage area networks','san','network attached storage','nas','block storage','disk storage','raid','ransomware'],
+  4:['it infrastructure','it operations','data center management','data center infrastructure management','dcim','server management','infrastructure as code','iac','infrastructure provisioning','automated provisioning','zero touch provisioning','ztp','container orchestration','containerization','containers','kubernetes','ansible','hashicorp terraform','terraform','software deployment','deployment automation','pci compliance','network security','information security','penetration testing','vulnerability assessment','vulnerability management','managed security services','total cost of ownership','tco'],
+  5:['sd-wan','sd wan','sase','secure access service edge','wan optimization','mpls','branch connectivity','branch office connectivity','remote connectivity','failover','edge networking']
 };
-var CLUSTER_TO_PRODUCTS = {1:['hypercore'],2:['platform','fleet'],3:['hypercore'],4:['hypercore','acuvigil']};
+var CLUSTER_TO_PRODUCTS = {1:['hypercore'],2:['platform','fleet'],3:['hypercore'],4:['hypercore','acuvigil'],5:['connect']};
 
 function detectCluster(topicStr){
   if(!topicStr)return null;
   var t=topicStr.toLowerCase();
-  for(var c=1;c<=4;c++){
+  for(var c=1;c<=5;c++){
     if(CLUSTER_KEYWORDS[c].some(function(kw){return t.indexOf(kw)>=0;}))return c;
   }
   return null;
@@ -656,6 +660,16 @@ function buildAccountPitch(a){
       pitch=irFirst
         ?irFirst+'. IT ops and cost optimization research signals a real infrastructure conversation — lead with SC//HyperCore™ for simplified management and reduced total cost of ownership.'+acuvigilAdd
         :'IT ops and cost optimization research signals — lead with SC//HyperCore™ for infrastructure simplification and reduced total cost of ownership.'+acuvigilAdd;
+    }
+  } else if(cluster===5){
+    if(hasFleet){
+      pitch=irFirst
+        ?irFirst+'. SD-WAN/SASE research across a multi-site footprint — lead with SC//Connect™ for branch and remote connectivity, paired with SC//Fleet Manager™ to manage every site\'s network from one place.'
+        :'SD-WAN/SASE research across a multi-site footprint — lead with SC//Connect™ for branch and remote connectivity, paired with SC//Fleet Manager™ for centralized site management.';
+    } else {
+      pitch=irFirst
+        ?irFirst+'. Active SD-WAN/SASE and branch connectivity research — lead with SC//Connect™ on failover reliability and MPLS displacement economics.'
+        :'SD-WAN/SASE and branch connectivity research detected — lead with SC//Connect™ on failover reliability and MPLS displacement economics.';
     }
   // Fallback: signal-based angles when no cluster keyword data is present
   } else if(ai>40&&s>=50){
