@@ -610,9 +610,10 @@ function classifyProductAreas(a){
   if(!hasProduct&&(a.intent_product>15||a.intent_branded>10||a.ai_readiness>25||a.score>=45))addTag('hypercore');
   if(!(areas.hypercore||areas.reliant||areas.acuvigil||areas.connect))addTag('hypercore');
 
-  // Per Brent (7/13/26): Branded tag is pulled in only when Cluster 7 literally appears in
-  // Column K (via the hits loop above) — the old intent_branded>30 score overlay is removed
-  // so a numeric score alone can no longer add the Scale Computing™ tag on its own.
+  // Per Ellie (7/13/26): Branded tag is pulled in when Cluster 7 literally appears anywhere in
+  // Column K (via the hits loop above), OR when Branded Intent score is over 55 — either
+  // condition alone is enough to show the Scale Computing™ tag.
+  if(a.intent_branded>55)addTag('branded');
 
   return orderedTags;
 }
@@ -620,8 +621,8 @@ function classifyProductAreas(a){
 function productAreaHtml(areas,wrap){
   areas=areas||[];
   // Per Brent (7/13/26): cap the display to just the first cluster called out in Column K —
-  // except the Branded (Cluster 7 / "Scale Computing™") tag, which still shows if present,
-  // since it's only ever added when it literally appears in Column K (see classifyProductAreas).
+  // except the Branded (Cluster 7 / "Scale Computing™") tag, which still shows if present
+  // (either a literal Column K hit or Branded Intent score > 55 — see classifyProductAreas).
   var shown=areas.slice(0,1);
   if(areas.indexOf('branded')>=0&&shown.indexOf('branded')<0)shown.push('branded');
   var html=shown.map(function(k){return'<span class="pa-tag pa-'+k+'">'+(PRODUCT_LABELS[k]||k)+'</span>';}).join('');
@@ -655,15 +656,23 @@ function buildAccountPitch(a){
   var irFirst=irNote?irNote.split(/\.\s+/)[0].trim():'';
 
   var pitch='';
-  var isBranded=areas.indexOf('branded')>=0; // matches the "Scale Computing™" tag, which now only
-  // fires on a literal Cluster 7 keyword hit in Column K (hasBrandedKw) — no score overlay
+  var isBranded=areas.indexOf('branded')>=0; // matches the "Scale Computing™" tag — fires on a
+  // literal Cluster 7 keyword hit in Column K (hasBrandedKw) or Branded Intent score > 55
+
+  // Per Ellie (7/13/26): the branded pitch used to hardcode "lead with SC//HyperCore™" even
+  // when the first product tag shown was something else (e.g. SC//Reliant™). Now it leads
+  // with whichever product tag actually appears first in areas — the same tag rendered as
+  // the primary Product Area chip — so the pitch never contradicts what's on screen.
+  var LEAD_PRODUCT_ORDER=['hypercore','reliant','acuvigil','connect'];
+  var leadKey=areas.filter(function(k){return LEAD_PRODUCT_ORDER.indexOf(k)>=0;})[0]||'hypercore';
+  var leadProduct=PRODUCT_LABELS[leadKey]||'SC//HyperCore™';
 
   // Branded Keywords always takes top priority — if they're searching Scale Computing
   // by name, that overrides any other cluster match woven into the same topic string.
   if(isBranded){
     pitch=irFirst
-      ?irFirst+'. They have searched for Scale Computing keywords specifically, and have awareness of the Scale Computing brand and products. Skip the nurture sequence, lead with SC//HyperCore™, and book a discovery call now.'
-      :'They have searched for Scale Computing keywords specifically, and have awareness of the Scale Computing brand and products. Lead with SC//HyperCore™ and book a discovery call now.';
+      ?irFirst+'. They have searched for Scale Computing keywords specifically, and have awareness of the Scale Computing brand and products. Skip the nurture sequence, lead with '+leadProduct+', and book a discovery call now.'
+      :'They have searched for Scale Computing keywords specifically, and have awareness of the Scale Computing brand and products. Lead with '+leadProduct+' and book a discovery call now.';
 
   // Cluster-specific pitch — driven by whichever product cluster is called out first in
   // Column K. If a second, different product cluster also shows up in Column K, its
