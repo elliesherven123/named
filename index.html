@@ -567,43 +567,53 @@ var CLUSTER_KEYWORDS = {
 };
 var CLUSTER_TO_PRODUCTS = {1:['hypercore'],2:['reliant'],3:['acuvigil'],4:['connect'],5:['vmware'],6:['nutanix'],7:['branded']};
 
-// Returns every cluster (1-7) whose keywords appear in the topic string — an account can
-// legitimately hit more than one at once (e.g. core HyperCore research + a VMware mention).
+// Returns every cluster (1-7) whose keywords appear in the topic string, ordered by where
+// each cluster's first matching keyword phrase appears in the text — not by cluster number.
+// This lets button order mirror the order clusters are actually called out in Column K.
 function detectClusters(topicStr){
   if(!topicStr)return[];
   var t=topicStr.toLowerCase();
-  var hits=[];
+  var found=[];
   for(var c=1;c<=7;c++){
-    if(CLUSTER_KEYWORDS[c].some(function(kw){return t.indexOf(kw)>=0;}))hits.push(c);
+    var bestPos=-1;
+    CLUSTER_KEYWORDS[c].forEach(function(kw){
+      var idx=t.indexOf(kw);
+      if(idx>=0&&(bestPos===-1||idx<bestPos))bestPos=idx;
+    });
+    if(bestPos>=0)found.push({c:c,pos:bestPos});
   }
-  return hits;
+  found.sort(function(x,y){return x.pos-y.pos;});
+  return found.map(function(f){return f.c;});
 }
 
 function classifyProductAreas(a){
   var areas={};
+  var orderedTags=[];
+  function addTag(k){if(!areas[k]){areas[k]=true;orderedTags.push(k);}}
   var co=(a.company||'').toLowerCase();
   var v=(a.vertical||'').toLowerCase();
 
-  // Primary: keyword clusters from Column K (Product Topic Cluster Keywords)
+  // Primary: keyword clusters from Column K (Product Topic Cluster Keywords) — hits already
+  // come back in the order those cluster keywords first appear in the Column K text, so the
+  // tags built from them here preserve that same order.
   var hits=a.topic_kw?detectClusters(a.topic_kw):[];
-  hits.forEach(function(c){(CLUSTER_TO_PRODUCTS[c]||[]).forEach(function(p){areas[p]=true;});});
+  hits.forEach(function(c){(CLUSTER_TO_PRODUCTS[c]||[]).forEach(addTag);});
 
-  // Secondary: vertical + company name keywords
-  if(/\b(wan\b|sd.?wan|telecom|broadband|connectivity|fiber\b|isp\b)\b/.test(co))areas.connect=true;
-  if(/\b(monitor|surveillance|managed.?service|msp\b|noc\b|soc\b|network.?ops)\b/.test(co))areas.acuvigil=true;
+  // Secondary: vertical + company name keywords — appended after any Column K matches
+  if(/\b(wan\b|sd.?wan|telecom|broadband|connectivity|fiber\b|isp\b)\b/.test(co))addTag('connect');
+  if(/\b(monitor|surveillance|managed.?service|msp\b|noc\b|soc\b|network.?ops)\b/.test(co))addTag('acuvigil');
   if(v==='manufacturing & industrial'||v==='energy & utilities'||
-     /\b(edge|industrial|factory|plant|field.?site|oilfield|refiner)\b/.test(co))areas.reliant=true;
+     /\b(edge|industrial|factory|plant|field.?site|oilfield|refiner)\b/.test(co))addTag('reliant');
 
   // Tertiary: score/intent signals — only if no core product line has fired yet
   var hasProduct=areas.hypercore||areas.reliant||areas.acuvigil||areas.connect;
-  if(!hasProduct&&(a.intent_product>15||a.intent_branded>10||a.ai_readiness>25||a.score>=45))areas.hypercore=true;
-  if(!(areas.hypercore||areas.reliant||areas.acuvigil||areas.connect))areas.hypercore=true;
+  if(!hasProduct&&(a.intent_product>15||a.intent_branded>10||a.ai_readiness>25||a.score>=45))addTag('hypercore');
+  if(!(areas.hypercore||areas.reliant||areas.acuvigil||areas.connect))addTag('hypercore');
 
   // Overlay: a strong numeric Branded Intent score reinforces the keyword-based Branded tag
-  if(a.intent_branded>30)areas.branded=true;
+  if(a.intent_branded>30)addTag('branded');
 
-  var order=['hypercore','reliant','acuvigil','connect','vmware','nutanix','branded'];
-  return order.filter(function(k){return areas[k];});
+  return orderedTags;
 }
 
 function productAreaHtml(areas,wrap){
