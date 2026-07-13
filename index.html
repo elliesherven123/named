@@ -634,8 +634,15 @@ function buildAccountPitch(a){
 
   var pitch='';
 
+  // Branded Keywords always takes top priority — if they're searching Scale Computing
+  // by name, that overrides any other cluster match woven into the same topic string.
+  if(hasBrandedKw){
+    pitch=irFirst
+      ?irFirst+'. They have searched for Scale Computing keywords specifically, and have awareness of the Scale Computing brand and products. Skip the nurture sequence, lead with SC//HyperCore™, and book a discovery call now.'
+      :'They have searched for Scale Computing keywords specifically, and have awareness of the Scale Computing brand and products. Lead with SC//HyperCore™ and book a discovery call now.';
+
   // Cluster-specific pitch — IR context and competitor context woven into the recommendation
-  if(productCluster===1){
+  } else if(productCluster===1){
     var compAdd1=competitor?' Position this as a '+competitor+' displacement opportunity on licensing simplicity and total cost of ownership.':'';
     if(hasReliant){
       pitch=irFirst
@@ -658,10 +665,6 @@ function buildAccountPitch(a){
     pitch=irFirst
       ?irFirst+'. Active SD-WAN/SASE and branch connectivity research — lead with SC//Connect™ on failover reliability and MPLS displacement economics.'
       :'SD-WAN/SASE and branch connectivity research detected — lead with SC//Connect™ on failover reliability and MPLS displacement economics.';
-  } else if(hasBrandedKw){
-    pitch=irFirst
-      ?irFirst+'. They have searched for Scale Computing keywords specifically, and have awareness of the Scale Computing brand and products. Skip the nurture sequence, lead with SC//HyperCore™, and book a discovery call now.'
-      :'They have searched for Scale Computing keywords specifically, and have awareness of the Scale Computing brand and products. Lead with SC//HyperCore™ and book a discovery call now.';
   } else if(b>30){
     pitch=irFirst
       ?irFirst+'. They\'re already researching Scale Computing by name. Skip the nurture sequence, lead with SC//HyperCore™, and book a discovery call now.'
