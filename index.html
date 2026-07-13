@@ -610,14 +610,21 @@ function classifyProductAreas(a){
   if(!hasProduct&&(a.intent_product>15||a.intent_branded>10||a.ai_readiness>25||a.score>=45))addTag('hypercore');
   if(!(areas.hypercore||areas.reliant||areas.acuvigil||areas.connect))addTag('hypercore');
 
-  // Overlay: a strong numeric Branded Intent score reinforces the keyword-based Branded tag
-  if(a.intent_branded>30)addTag('branded');
+  // Per Brent (7/13/26): Branded tag is pulled in only when Cluster 7 literally appears in
+  // Column K (via the hits loop above) — the old intent_branded>30 score overlay is removed
+  // so a numeric score alone can no longer add the Scale Computing™ tag on its own.
 
   return orderedTags;
 }
 
 function productAreaHtml(areas,wrap){
-  var html=(areas||[]).map(function(k){return'<span class="pa-tag pa-'+k+'">'+(PRODUCT_LABELS[k]||k)+'</span>';}).join('');
+  areas=areas||[];
+  // Per Brent (7/13/26): cap the display to just the first cluster called out in Column K —
+  // except the Branded (Cluster 7 / "Scale Computing™") tag, which still shows if present,
+  // since it's only ever added when it literally appears in Column K (see classifyProductAreas).
+  var shown=areas.slice(0,1);
+  if(areas.indexOf('branded')>=0&&shown.indexOf('branded')<0)shown.push('branded');
+  var html=shown.map(function(k){return'<span class="pa-tag pa-'+k+'">'+(PRODUCT_LABELS[k]||k)+'</span>';}).join('');
   return wrap?'<div style="display:flex;gap:3px;flex-wrap:wrap;margin-bottom:2px">'+html+'</div>':html;
 }
 
@@ -631,7 +638,12 @@ function buildAccountPitch(a){
   var hasNutanix=hits.indexOf(6)>=0;
   var hasBrandedKw=hits.indexOf(7)>=0;
   var competitor=(hasVMware&&hasNutanix)?'VMware and Nutanix':hasVMware?'VMware':hasNutanix?'Nutanix':null;
-  var productCluster=[1,2,3,4].filter(function(c){return hits.indexOf(c)>=0;})[0];
+  // hits is already ordered by where each cluster's keywords first appear in Column K, so the
+  // first and second entries here are literally the first and second product clusters called
+  // out in Column K (competitor/branded clusters 5-7 filtered out — those are handled separately).
+  var productClusters=hits.filter(function(c){return c>=1&&c<=4;});
+  var primaryCluster=productClusters[0];
+  var secondaryCluster=productClusters[1];
 
   // Extract IR context — full note if meaningful, empty string if boilerplate
   var irNote='';
@@ -643,8 +655,8 @@ function buildAccountPitch(a){
   var irFirst=irNote?irNote.split(/\.\s+/)[0].trim():'';
 
   var pitch='';
-  var isBranded=areas.indexOf('branded')>=0; // matches whatever drove the "Scale Computing™" tag —
-  // either a literal keyword hit (hasBrandedKw) or the intent_branded>30 score overlay in classifyProductAreas
+  var isBranded=areas.indexOf('branded')>=0; // matches the "Scale Computing™" tag, which now only
+  // fires on a literal Cluster 7 keyword hit in Column K (hasBrandedKw) — no score overlay
 
   // Branded Keywords always takes top priority — if they're searching Scale Computing
   // by name, that overrides any other cluster match woven into the same topic string.
@@ -653,30 +665,26 @@ function buildAccountPitch(a){
       ?irFirst+'. They have searched for Scale Computing keywords specifically, and have awareness of the Scale Computing brand and products. Skip the nurture sequence, lead with SC//HyperCore™, and book a discovery call now.'
       :'They have searched for Scale Computing keywords specifically, and have awareness of the Scale Computing brand and products. Lead with SC//HyperCore™ and book a discovery call now.';
 
-  // Cluster-specific pitch — IR context and competitor context woven into the recommendation
-  } else if(productCluster===1){
-    var compAdd1=competitor?' Position this as a '+competitor+' displacement opportunity on licensing simplicity and total cost of ownership.':'';
-    if(hasReliant){
-      pitch=irFirst
-        ?irFirst+'. HCI and virtualization research with an edge compute fit — lead with SC//HyperCore™ on simplicity and total cost of ownership, and layer in SC//Reliant™ for hardened compute at the industrial edge.'+compAdd1
-        :'HCI research with an edge compute angle — lead with SC//HyperCore™ on simplicity and total cost of ownership, and layer in SC//Reliant™ for purpose-built compute at the industrial edge.'+compAdd1;
-    } else {
-      pitch=irFirst
-        ?irFirst+'. Active HCI, virtualization, and infrastructure research underway — lead with SC//HyperCore™ on simplified operations and total cost of ownership.'+compAdd1
-        :'Active HCI, virtualization, and infrastructure research detected — lead with SC//HyperCore™ on simplified operations and total cost of ownership.'+compAdd1;
-    }
-  } else if(productCluster===2){
-    pitch=irFirst
-      ?irFirst+'. Edge and hybrid cloud research signals a real infrastructure conversation — lead with SC//Reliant™ as the purpose-built solution for edge and remote environments.'
-      :'Edge and hybrid cloud research signals — lead with SC//Reliant™ as a purpose-built solution for edge and remote infrastructure.';
-  } else if(productCluster===3){
-    pitch=irFirst
-      ?irFirst+'. PCI compliance and network security research signals a managed services conversation — lead with SC//AcuVigil™ for managed network visibility and compliance readiness.'
-      :'PCI compliance and network security research detected — lead with SC//AcuVigil™ for managed network visibility and compliance readiness.';
-  } else if(productCluster===4){
-    pitch=irFirst
-      ?irFirst+'. Active SD-WAN/SASE and branch connectivity research — lead with SC//Connect™ on failover reliability and MPLS displacement economics.'
-      :'SD-WAN/SASE and branch connectivity research detected — lead with SC//Connect™ on failover reliability and MPLS displacement economics.';
+  // Cluster-specific pitch — driven by whichever product cluster is called out first in
+  // Column K. If a second, different product cluster also shows up in Column K, its
+  // recommendation gets woven in as a secondary angle rather than dropped.
+  } else if(primaryCluster){
+    var CLUSTER_LEAD={
+      1:'Active HCI, virtualization, and infrastructure research detected. Lead with SC//HyperCore™ on simplified operations and total cost of ownership.',
+      2:'Edge and hybrid cloud research detected. Lead with SC//Reliant™ as the purpose-built solution for edge and remote environments.',
+      3:'PCI compliance and network security research detected. Lead with SC//AcuVigil™ for managed network visibility and compliance readiness.',
+      4:'Active SD-WAN/SASE and branch connectivity research detected. Lead with SC//Connect™ on failover reliability and MPLS displacement economics.'
+    };
+    var CLUSTER_WEAVE={
+      1:'There\'s HCI and virtualization signal here too, worth layering in SC//HyperCore™ on simplicity and total cost of ownership.',
+      2:'There\'s edge and hybrid cloud signal here too, worth layering in SC//Reliant™ for hardened, purpose-built compute at the edge.',
+      3:'There\'s compliance and network security signal here too, worth layering in SC//AcuVigil™ for managed network visibility.',
+      4:'There\'s SD-WAN and branch connectivity signal here too, worth layering in SC//Connect™ on failover reliability.'
+    };
+    var lead=CLUSTER_LEAD[primaryCluster];
+    var weave=(secondaryCluster&&CLUSTER_WEAVE[secondaryCluster])?' '+CLUSTER_WEAVE[secondaryCluster]:'';
+    var compAdd1=(primaryCluster===1&&competitor)?' Position this as a '+competitor+' displacement opportunity on licensing simplicity and total cost of ownership.':'';
+    pitch=(irFirst?irFirst+'. ':'')+lead+weave+compAdd1;
   } else if(competitor){
     pitch=irFirst
       ?irFirst+'. Actively comparing vendors against '+competitor+' — lead with SC//HyperCore™ on licensing simplicity and total cost of ownership, and ask for a head-to-head discovery call.'
