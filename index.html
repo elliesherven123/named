@@ -543,7 +543,7 @@ var PRODUCT_LABELS = {
   connect:   'SC//Connect™',
   vmware:    'Competitor: VMware',
   nutanix:   'Competitor: Nutanix',
-  branded:   'Branded Keywords'
+  branded:   'Scale Computing™'
 };
 
 // Cluster keyword sets — sourced from Product Topic Intent Report
@@ -658,10 +658,14 @@ function buildAccountPitch(a){
     pitch=irFirst
       ?irFirst+'. Active SD-WAN/SASE and branch connectivity research — lead with SC//Connect™ on failover reliability and MPLS displacement economics.'
       :'SD-WAN/SASE and branch connectivity research detected — lead with SC//Connect™ on failover reliability and MPLS displacement economics.';
-  } else if(hasBrandedKw||b>30){
+  } else if(hasBrandedKw){
     pitch=irFirst
-      ?irFirst+'. They\'re already researching Scale Computing by name — skip the nurture sequence, lead with SC//HyperCore™, and book a discovery call now.'
-      :'Branded search intent confirmed — they\'re already evaluating Scale Computing by name. Lead with SC//HyperCore™ and book a discovery call now.';
+      ?irFirst+'. They have searched for Scale Computing keywords specifically, and have awareness of the Scale Computing brand and products. Skip the nurture sequence, lead with SC//HyperCore™, and book a discovery call now.'
+      :'They have searched for Scale Computing keywords specifically, and have awareness of the Scale Computing brand and products. Lead with SC//HyperCore™ and book a discovery call now.';
+  } else if(b>30){
+    pitch=irFirst
+      ?irFirst+'. They\'re already researching Scale Computing by name. Skip the nurture sequence, lead with SC//HyperCore™, and book a discovery call now.'
+      :'Branded search intent confirmed. They\'re already evaluating Scale Computing by name. Lead with SC//HyperCore™ and book a discovery call now.';
   } else if(competitor){
     pitch=irFirst
       ?irFirst+'. Actively comparing vendors against '+competitor+' — lead with SC//HyperCore™ on licensing simplicity and total cost of ownership, and ask for a head-to-head discovery call.'
