@@ -606,21 +606,26 @@ function classifyProductAreas(a){
   // tags built from them here preserve that same order.
   var hits=a.topic_kw?detectClusters(a.topic_kw):[];
 
-  // Per Ellie (7/18/26): the combined HyperCore + Reliant display only fires when Cluster 1 and
-  // Cluster 2 are literally the first two clusters called out in Column K — order between them
-  // doesn't matter (1-then-2 or 2-then-1 both count), but a third cluster (e.g. a competitor
-  // hit) sitting between/before them means this is NOT a 1+2 combo. This must fire strictly off
-  // the raw Column K keyword hits (detectClusters) — never off the vertical/company-name
-  // heuristic below or the tertiary score fallback, both of which can independently add a
-  // 'reliant' tag (e.g. any manufacturing/industrial account gets 'reliant' added below
-  // regardless of what's in Column K). Conflating those with this flag previously caused every
-  // Cluster-1-only account in an edge-flavored vertical to incorrectly show the combo.
-  var firstTwoHits=hits.slice(0,2);
-  var isCluster12Combo=firstTwoHits.length===2&&firstTwoHits.indexOf(1)>=0&&firstTwoHits.indexOf(2)>=0;
+  // Per Ellie (7/18/26): simplified rule driven purely by whichever product cluster (1-4) is
+  // literally FIRST in Column K — not by what follows it:
+  //   Cluster 1 first   -> HyperCore ONLY, even if Cluster 2 also appears later in the cell.
+  //   Cluster 2 first   -> HyperCore AND Reliant together, in that fixed order, even if Cluster
+  //                        1 never appears (or appears later) — Cluster 2 is the "at the edge"
+  //                        variant of HyperCore, so the pairing is implied by Cluster 2 alone.
+  //   Cluster 3/4 first -> that cluster's single tag, unchanged.
+  // This must fire strictly off the raw Column K keyword hits (detectClusters) — never off the
+  // vertical/company-name heuristic below or the tertiary score fallback, both of which can
+  // independently add a 'reliant' tag (e.g. any manufacturing/industrial account gets 'reliant'
+  // added below regardless of what's in Column K). Conflating those with this flag previously
+  // caused every Cluster-1-only account in an edge-flavored vertical to incorrectly show both.
+  var productClusters=hits.filter(function(c){return c>=1&&c<=4;});
+  var primaryCluster=productClusters[0];
+  var isCluster2Primary=(primaryCluster===2);
 
   // No forced reordering here — tags are added in hits.forEach below in the exact order their
-  // clusters first appear in the Column K text, and that natural order is preserved all the way
-  // through to display (Per Ellie 7/18/26: Product Area icons must match Column K order).
+  // clusters first appear in the Column K text; shownProductAreas() below overrides the order
+  // for the Cluster-2-first case specifically (forced HyperCore-then-Reliant), since HyperCore
+  // may not even appear in Column K in that scenario.
   hits.forEach(function(c){(CLUSTER_TO_PRODUCTS[c]||[]).forEach(addTag);});
 
   // Secondary: vertical + company name keywords — appended after any Column K matches
@@ -639,11 +644,11 @@ function classifyProductAreas(a){
   // condition alone is enough to show the Scale Computing™ tag.
   if(a.intent_branded>55)addTag('branded');
 
-  // Attach the combo flag directly to the returned array (arrays are objects in JS, so this
-  // doesn't affect .length, .map, .forEach, etc.) so productAreaHtml and anything else reading
+  // Attach the flag directly to the returned array (arrays are objects in JS, so this doesn't
+  // affect .length, .map, .forEach, etc.) so productAreaHtml and anything else reading
   // product_areas can check the real Column K signal without re-deriving it or guessing from
   // tag order.
-  orderedTags.cluster12Combo=isCluster12Combo;
+  orderedTags.cluster2Primary=isCluster2Primary;
 
   return orderedTags;
 }
@@ -653,14 +658,23 @@ function classifyProductAreas(a){
 // can filter on exactly what's displayed, rather than the full (uncapped) product_areas array.
 // Cap to the first cluster called out in Column K — except the Branded (Cluster 7 / "Scale
 // Computing™") tag, which still shows if present (either a literal Column K hit or Branded
-// Intent score > 55 — see classifyProductAreas), and except the Cluster 1+2 combo case (areas.
-// cluster12Combo), where HyperCore + Reliant both show, in whichever order they actually
-// appeared in Column K.
+// Intent score > 55 — see classifyProductAreas), and except when Cluster 2 is literally the
+// first product cluster (areas.cluster2Primary), where HyperCore + Reliant both show.
+// Per Ellie (7/18/26 follow-up): the two tags must display in Column K order, not a fixed
+// order — since Cluster 2 is by definition the first product cluster whenever this branch
+// fires, Reliant always comes first here; Cluster 1 (HyperCore), if it appears in Column K at
+// all, can only appear AFTER Cluster 2, so `areas` already has 'reliant' ahead of 'hypercore'
+// in that case. If Cluster 1 never appears in the cell, 'hypercore' is appended at the end
+// (there's no real Column K position for it — Cluster 2 alone implies it).
 function shownProductAreas(areas){
   areas=areas||[];
-  var shown=areas.cluster12Combo
-    ?areas.filter(function(k){return k==='hypercore'||k==='reliant';})
-    :areas.slice(0,1);
+  var shown;
+  if(areas.cluster2Primary){
+    shown=areas.filter(function(k){return k==='hypercore'||k==='reliant';});
+    if(shown.indexOf('hypercore')<0)shown.push('hypercore');
+  } else {
+    shown=areas.slice(0,1);
+  }
   if(areas.indexOf('branded')>=0&&shown.indexOf('branded')<0)shown.push('branded');
   return shown;
 }
@@ -683,15 +697,14 @@ function buildAccountPitch(a){
   var hasBrandedKw=hits.indexOf(7)>=0;
   var competitor=(hasVMware&&hasNutanix)?'VMware and Nutanix':hasVMware?'VMware':hasNutanix?'Nutanix':null;
   // hits is already ordered by where each cluster's keywords first appear in Column K, so the
-  // first and second entries here are literally the first and second product clusters called
-  // out in Column K (competitor/branded clusters 5-7 filtered out — those are handled separately).
+  // first entry here is literally the first product cluster called out in Column K
+  // (competitor/branded clusters 5-7 filtered out — those are handled separately).
   var productClusters=hits.filter(function(c){return c>=1&&c<=4;});
   var primaryCluster=productClusters[0];
-  // Per Ellie (7/18/26): matches the same strict rule classifyProductAreas uses — Cluster 1 and
-  // Cluster 2 must be literally the first two clusters called out anywhere in Column K (order
-  // between them doesn't matter), not just "both present somewhere in the cell."
-  var firstTwoHits=hits.slice(0,2);
-  var isCluster12Combo=firstTwoHits.length===2&&firstTwoHits.indexOf(1)>=0&&firstTwoHits.indexOf(2)>=0;
+  // Per Ellie (7/18/26): matches the same simplified rule classifyProductAreas uses — Cluster 2
+  // being literally the FIRST product cluster in Column K is enough to trigger the combined
+  // HyperCore + Reliant pitch, regardless of whether Cluster 1 appears anywhere in the cell.
+  var isCluster2Primary=(primaryCluster===2);
 
   // Extract IR context — full note if meaningful, empty string if boilerplate
   var irNote='';
@@ -721,28 +734,29 @@ function buildAccountPitch(a){
       ?irFirst+'. They have searched for Scale Computing keywords specifically, and have awareness of the Scale Computing brand and products. Skip the nurture sequence, lead with '+leadProduct+', and book a discovery call now.'
       :'They have searched for Scale Computing keywords specifically, and have awareness of the Scale Computing brand and products. Lead with '+leadProduct+' and book a discovery call now.';
 
-  // Per Ellie (7/18/26): if Cluster 1 (HyperCore) and Cluster 2 (Reliant/edge) are literally the
-  // first two clusters called out in Column K, pitch both products together for compute at the
-  // edge instead of picking one as primary and weaving the other in as a footnote. This takes
-  // priority over the general cluster-specific branch below so the 1+2 combo always gets this
-  // dedicated message, regardless of which of the two keywords happened to appear first.
-  } else if(isCluster12Combo){
+  // Per Ellie (7/18/26): whenever Cluster 2 (Reliant/edge) is literally the FIRST product
+  // cluster called out in Column K, pitch both products together for compute at the edge —
+  // Cluster 2 is the "at the edge" variant of HyperCore, so the pairing is implied by Cluster 2
+  // alone, even if Cluster 1 never appears in the cell at all. This takes priority over the
+  // general cluster-specific branch below so Cluster 2 always gets this dedicated message
+  // whenever it's first, regardless of what (if anything) follows it.
+  } else if(isCluster2Primary){
     var compAddCombo=competitor?' Position this as a '+competitor+' displacement opportunity on licensing simplicity and total cost of ownership.':'';
     pitch=(irFirst?irFirst+'. ':'')+'Interest in both HCI appliance and edge computing research detected. Lead with SC//HyperCore™ and SC//Reliant™ together, positioning Scale Computing for compute at the edge, from core HCI appliance workloads to hardened, purpose-built edge deployments.'+compAddCombo;
 
   // Cluster-specific pitch — driven by whichever product cluster is called out FIRST in Column
   // K. Per Ellie (7/18/26): a cluster that shows up later in Column K but isn't in the first
-  // position (and isn't part of the dedicated 1+2 first-two-position combo above) no longer
-  // gets woven into the pitch at all — e.g. Subway has Cluster 3 first with Clusters 1 and 2
-  // also present later in the cell, and should pitch ONLY SC//AcuVigil™, matching the single
-  // Product Area tag shown on screen. Weaving a secondary product into the pitch text when it
-  // isn't shown as a Product Area tag created a mismatch between what's pitched and what's
-  // displayed, so that weave step has been removed — the pitch now always matches the single
-  // capped Product Area tag (except the explicit 1+2 combo, which is handled above).
+  // position (and isn't the dedicated Cluster-2-first combo above) no longer gets woven into
+  // the pitch at all — e.g. an account with Cluster 3 first and Clusters 1/2 also present later
+  // in the cell should pitch ONLY SC//AcuVigil™, matching the single Product Area tag shown on
+  // screen. Weaving a secondary product into the pitch text when it isn't shown as a Product
+  // Area tag created a mismatch between what's pitched and what's displayed, so that weave step
+  // has been removed — the pitch now always matches the single capped Product Area tag (except
+  // the Cluster-2-first combo, handled above). No entry for cluster 2 below — primaryCluster can
+  // never be 2 here, since isCluster2Primary already routes that case to the branch above.
   } else if(primaryCluster){
     var CLUSTER_LEAD={
       1:'Interest in HCI appliance research detected. Lead with SC//HyperCore™ on simplified operations and total cost of ownership.',
-      2:'Edge and hybrid cloud research detected. Lead with SC//Reliant™ as the purpose-built solution for edge and remote environments.',
       3:'PCI compliance and network security research detected. Lead with SC//AcuVigil™ for managed network visibility and compliance readiness.',
       4:'Active SD-WAN/SASE and branch connectivity research detected. Lead with SC//Connect™ on failover reliability and MPLS displacement economics.'
     };
