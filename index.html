@@ -368,6 +368,7 @@ tr:hover td{background:rgba(0,154,222,0.03);}
       <option value="Monitor">🔵 Monitor</option>
     </select>
     <select class="fs" id="filter-vertical" onchange="filterAll()"><option value="">All Verticals</option></select>
+    <select class="fs" id="filter-product" onchange="filterAll()"><option value="">All Product Areas</option></select>
     <select class="fs" id="sort-all" onchange="filterAll()">
       <option value="score">Sort: Hot Score</option>
       <option value="priority">Sort: Priority</option>
@@ -554,8 +555,13 @@ var PRODUCT_LABELS = {
 //   7: Branded Keywords
 // HCIA, Cloud Infrastructure, Air-Gapped Backup, and Cloud Storage stay excluded
 // (too generic, caused false-positive cluster hits). VMware/Nutanix/SimpliVity were
-// pulled out of Cluster 1 into their own competitor clusters (5,6) so they can render
-// as standalone Product Area tags instead of being buried inside HyperCore.
+// pulled out of Cluster 1 into their own competitor clusters (5,6) purely so the pitch's
+// competitor-displacement logic (hasVMware/hasNutanix in buildAccountPitch) can detect them
+// cleanly from Column K. Per Ellie (7/18/26): Clusters 5/6 no longer render as Product Area
+// tags at all (removed from CLUSTER_TO_PRODUCTS and the Product Area filter below) — an
+// account whose only hit is a competitor cluster now falls through to the normal HyperCore
+// fallback in Product Area, while the pitch's competitor-displacement text is unaffected since
+// it reads Column K hits directly, not the Product Area tags.
 var CLUSTER_KEYWORDS = {
   1:['hyper-converged infrastructure','converged infrastructure','server virtualization','virtualization','virtual machines','bare-metal hypervisor','native hypervisor','virtual desktop infrastructure','vdi','virtual desktops','desktop as a service','daas','thin client','zero client','data protection','backup and recovery','backup software','cloud backup','backup as a service','baas','disaster recovery','business continuity','high availability','fault tolerance','recovery point objective','rpo','enterprise storage','storage area networks','san','network attached storage','nas','block storage','disk storage','raid','ransomware','it infrastructure','it operations','data center management','data center infrastructure management','dcim','server management','infrastructure as code','iac','infrastructure provisioning','automated provisioning','container orchestration','containerization','containers','kubernetes','ansible','hashicorp terraform','terraform','software deployment','deployment automation','total cost of ownership','tco'],
   2:['edge computing','edge ai','fog computing','internet of things','iot','industrial internet of things','smart retail','connected retail','hybrid cloud','multicloud','private cloud','cloud migration','cloud repatriation','cloud provisioning','software-defined infrastructure','high performance computing','gpu clusters','zero touch provisioning','ztp'],
@@ -565,7 +571,9 @@ var CLUSTER_KEYWORDS = {
   6:['nutanix','simplivity'],
   7:['scale computing','scalecomputing','scale hypercore','scale computing hypervisor']
 };
-var CLUSTER_TO_PRODUCTS = {1:['hypercore'],2:['reliant'],3:['acuvigil'],4:['connect'],5:['vmware'],6:['nutanix'],7:['branded']};
+// Per Ellie (7/18/26): 5 (VMware) and 6 (Nutanix) intentionally have no entry here — competitor
+// clusters no longer produce a Product Area tag (see comment above CLUSTER_KEYWORDS).
+var CLUSTER_TO_PRODUCTS = {1:['hypercore'],2:['reliant'],3:['acuvigil'],4:['connect'],7:['branded']};
 
 // Returns every cluster (1-7) whose keywords appear in the topic string, ordered by where
 // each cluster's first matching keyword phrase appears in the text — not by cluster number.
@@ -597,6 +605,22 @@ function classifyProductAreas(a){
   // come back in the order those cluster keywords first appear in the Column K text, so the
   // tags built from them here preserve that same order.
   var hits=a.topic_kw?detectClusters(a.topic_kw):[];
+
+  // Per Ellie (7/18/26): the combined HyperCore + Reliant display only fires when Cluster 1 and
+  // Cluster 2 are literally the first two clusters called out in Column K — order between them
+  // doesn't matter (1-then-2 or 2-then-1 both count), but a third cluster (e.g. a competitor
+  // hit) sitting between/before them means this is NOT a 1+2 combo. This must fire strictly off
+  // the raw Column K keyword hits (detectClusters) — never off the vertical/company-name
+  // heuristic below or the tertiary score fallback, both of which can independently add a
+  // 'reliant' tag (e.g. any manufacturing/industrial account gets 'reliant' added below
+  // regardless of what's in Column K). Conflating those with this flag previously caused every
+  // Cluster-1-only account in an edge-flavored vertical to incorrectly show the combo.
+  var firstTwoHits=hits.slice(0,2);
+  var isCluster12Combo=firstTwoHits.length===2&&firstTwoHits.indexOf(1)>=0&&firstTwoHits.indexOf(2)>=0;
+
+  // No forced reordering here — tags are added in hits.forEach below in the exact order their
+  // clusters first appear in the Column K text, and that natural order is preserved all the way
+  // through to display (Per Ellie 7/18/26: Product Area icons must match Column K order).
   hits.forEach(function(c){(CLUSTER_TO_PRODUCTS[c]||[]).forEach(addTag);});
 
   // Secondary: vertical + company name keywords — appended after any Column K matches
@@ -615,16 +639,35 @@ function classifyProductAreas(a){
   // condition alone is enough to show the Scale Computing™ tag.
   if(a.intent_branded>55)addTag('branded');
 
+  // Attach the combo flag directly to the returned array (arrays are objects in JS, so this
+  // doesn't affect .length, .map, .forEach, etc.) so productAreaHtml and anything else reading
+  // product_areas can check the real Column K signal without re-deriving it or guessing from
+  // tag order.
+  orderedTags.cluster12Combo=isCluster12Combo;
+
   return orderedTags;
+}
+
+// Per Ellie (7/18/26): the set of Product Area keys actually SHOWN on screen for an account —
+// pulled out of productAreaHtml so the "Product Area" filter dropdown in the All Accounts modal
+// can filter on exactly what's displayed, rather than the full (uncapped) product_areas array.
+// Cap to the first cluster called out in Column K — except the Branded (Cluster 7 / "Scale
+// Computing™") tag, which still shows if present (either a literal Column K hit or Branded
+// Intent score > 55 — see classifyProductAreas), and except the Cluster 1+2 combo case (areas.
+// cluster12Combo), where HyperCore + Reliant both show, in whichever order they actually
+// appeared in Column K.
+function shownProductAreas(areas){
+  areas=areas||[];
+  var shown=areas.cluster12Combo
+    ?areas.filter(function(k){return k==='hypercore'||k==='reliant';})
+    :areas.slice(0,1);
+  if(areas.indexOf('branded')>=0&&shown.indexOf('branded')<0)shown.push('branded');
+  return shown;
 }
 
 function productAreaHtml(areas,wrap){
   areas=areas||[];
-  // Per Brent (7/13/26): cap the display to just the first cluster called out in Column K —
-  // except the Branded (Cluster 7 / "Scale Computing™") tag, which still shows if present
-  // (either a literal Column K hit or Branded Intent score > 55 — see classifyProductAreas).
-  var shown=areas.slice(0,1);
-  if(areas.indexOf('branded')>=0&&shown.indexOf('branded')<0)shown.push('branded');
+  var shown=shownProductAreas(areas);
   var html=shown.map(function(k){return'<span class="pa-tag pa-'+k+'">'+(PRODUCT_LABELS[k]||k)+'</span>';}).join('');
   return wrap?'<div style="display:flex;gap:3px;flex-wrap:wrap;margin-bottom:2px">'+html+'</div>':html;
 }
@@ -644,7 +687,11 @@ function buildAccountPitch(a){
   // out in Column K (competitor/branded clusters 5-7 filtered out — those are handled separately).
   var productClusters=hits.filter(function(c){return c>=1&&c<=4;});
   var primaryCluster=productClusters[0];
-  var secondaryCluster=productClusters[1];
+  // Per Ellie (7/18/26): matches the same strict rule classifyProductAreas uses — Cluster 1 and
+  // Cluster 2 must be literally the first two clusters called out anywhere in Column K (order
+  // between them doesn't matter), not just "both present somewhere in the cell."
+  var firstTwoHits=hits.slice(0,2);
+  var isCluster12Combo=firstTwoHits.length===2&&firstTwoHits.indexOf(1)>=0&&firstTwoHits.indexOf(2)>=0;
 
   // Extract IR context — full note if meaningful, empty string if boilerplate
   var irNote='';
@@ -674,26 +721,34 @@ function buildAccountPitch(a){
       ?irFirst+'. They have searched for Scale Computing keywords specifically, and have awareness of the Scale Computing brand and products. Skip the nurture sequence, lead with '+leadProduct+', and book a discovery call now.'
       :'They have searched for Scale Computing keywords specifically, and have awareness of the Scale Computing brand and products. Lead with '+leadProduct+' and book a discovery call now.';
 
-  // Cluster-specific pitch — driven by whichever product cluster is called out first in
-  // Column K. If a second, different product cluster also shows up in Column K, its
-  // recommendation gets woven in as a secondary angle rather than dropped.
+  // Per Ellie (7/18/26): if Cluster 1 (HyperCore) and Cluster 2 (Reliant/edge) are literally the
+  // first two clusters called out in Column K, pitch both products together for compute at the
+  // edge instead of picking one as primary and weaving the other in as a footnote. This takes
+  // priority over the general cluster-specific branch below so the 1+2 combo always gets this
+  // dedicated message, regardless of which of the two keywords happened to appear first.
+  } else if(isCluster12Combo){
+    var compAddCombo=competitor?' Position this as a '+competitor+' displacement opportunity on licensing simplicity and total cost of ownership.':'';
+    pitch=(irFirst?irFirst+'. ':'')+'Interest in both HCI appliance and edge computing research detected. Lead with SC//HyperCore™ and SC//Reliant™ together, positioning Scale Computing for compute at the edge, from core HCI appliance workloads to hardened, purpose-built edge deployments.'+compAddCombo;
+
+  // Cluster-specific pitch — driven by whichever product cluster is called out FIRST in Column
+  // K. Per Ellie (7/18/26): a cluster that shows up later in Column K but isn't in the first
+  // position (and isn't part of the dedicated 1+2 first-two-position combo above) no longer
+  // gets woven into the pitch at all — e.g. Subway has Cluster 3 first with Clusters 1 and 2
+  // also present later in the cell, and should pitch ONLY SC//AcuVigil™, matching the single
+  // Product Area tag shown on screen. Weaving a secondary product into the pitch text when it
+  // isn't shown as a Product Area tag created a mismatch between what's pitched and what's
+  // displayed, so that weave step has been removed — the pitch now always matches the single
+  // capped Product Area tag (except the explicit 1+2 combo, which is handled above).
   } else if(primaryCluster){
     var CLUSTER_LEAD={
-      1:'Active HCI, virtualization, and infrastructure research detected. Lead with SC//HyperCore™ on simplified operations and total cost of ownership.',
+      1:'Interest in HCI appliance research detected. Lead with SC//HyperCore™ on simplified operations and total cost of ownership.',
       2:'Edge and hybrid cloud research detected. Lead with SC//Reliant™ as the purpose-built solution for edge and remote environments.',
       3:'PCI compliance and network security research detected. Lead with SC//AcuVigil™ for managed network visibility and compliance readiness.',
       4:'Active SD-WAN/SASE and branch connectivity research detected. Lead with SC//Connect™ on failover reliability and MPLS displacement economics.'
     };
-    var CLUSTER_WEAVE={
-      1:'There\'s HCI and virtualization signal here too, worth layering in SC//HyperCore™ on simplicity and total cost of ownership.',
-      2:'There\'s edge and hybrid cloud signal here too, worth layering in SC//Reliant™ for hardened, purpose-built compute at the edge.',
-      3:'There\'s compliance and network security signal here too, worth layering in SC//AcuVigil™ for managed network visibility.',
-      4:'There\'s SD-WAN and branch connectivity signal here too, worth layering in SC//Connect™ on failover reliability.'
-    };
     var lead=CLUSTER_LEAD[primaryCluster];
-    var weave=(secondaryCluster&&CLUSTER_WEAVE[secondaryCluster])?' '+CLUSTER_WEAVE[secondaryCluster]:'';
     var compAdd1=(primaryCluster===1&&competitor)?' Position this as a '+competitor+' displacement opportunity on licensing simplicity and total cost of ownership.':'';
-    pitch=(irFirst?irFirst+'. ':'')+lead+weave+compAdd1;
+    pitch=(irFirst?irFirst+'. ':'')+lead+compAdd1;
   } else if(competitor){
     pitch=irFirst
       ?irFirst+'. Actively comparing vendors against '+competitor+' — lead with SC//HyperCore™ on licensing simplicity and total cost of ownership, and ask for a head-to-head discovery call.'
@@ -864,19 +919,31 @@ function toggleAcct(id){var b=document.getElementById(id),ic=document.getElement
 function openDrill(rep){document.querySelectorAll('.nav-btn').forEach(function(b){b.classList.remove('active');if(b.textContent.includes('Rep Drilldown'))b.classList.add('active');});document.querySelectorAll('.tab-panel').forEach(function(p){p.classList.remove('active');});document.getElementById('tab-drilldown').classList.add('active');loadDrill(rep);window.scrollTo(0,0);}
 
 var allF=[],allP=1,PS=25;
+// Per Ellie (7/18/26): fixed display order for the Product Area filter dropdown — matches the
+// taxonomy order used everywhere else (CLUSTER_TO_PRODUCTS / PRODUCT_LABELS), not a dynamic
+// scan of the data, since these are code-defined categories rather than sheet-driven strings.
+// VMware/Nutanix intentionally excluded — they no longer render as Product Area tags at all.
+var PRODUCT_FILTER_ORDER=['hypercore','reliant','acuvigil','connect','branded'];
 function populateFilters(){
   var rs=document.getElementById('filter-rep');rs.innerHTML='<option value="">All Reps</option>';
   [...new Set(D.accounts.map(function(a){return a.rep;}))].sort().forEach(function(r){rs.innerHTML+='<option value="'+r+'">'+r+'</option>';});
   var vs=document.getElementById('filter-vertical');vs.innerHTML='<option value="">All Verticals</option>';
   [...new Set(D.accounts.map(function(a){return a.vertical;}))].sort().forEach(function(v){vs.innerHTML+='<option value="'+v+'">'+v+'</option>';});
+  var ps=document.getElementById('filter-product');ps.innerHTML='<option value="">All Product Areas</option>';
+  PRODUCT_FILTER_ORDER.forEach(function(k){ps.innerHTML+='<option value="'+k+'">'+(PRODUCT_LABELS[k]||k)+'</option>';});
 }
 function filterAll(){
   var s=document.getElementById('search-all').value.toLowerCase();
   var r=document.getElementById('filter-rep').value;
   var u=document.getElementById('filter-urgency').value;
   var v=document.getElementById('filter-vertical').value;
+  var p=document.getElementById('filter-product').value;
   var sort=document.getElementById('sort-all').value;
-  allF=D.accounts.filter(function(a){return(!s||a.company.toLowerCase().includes(s))&&(!r||a.rep===r)&&(!u||a.urgency===u)&&(!v||a.vertical===v);}).sort(function(a,b){return b[sort]-a[sort];});
+  // Per Ellie (7/18/26): filter on shownProductAreas(a.product_areas) rather than the raw
+  // product_areas array — this must match exactly what's visible in the Product Area column,
+  // otherwise a company could match the filter on a tag that isn't actually shown for it (e.g.
+  // a secondary cluster that got capped out of display).
+  allF=D.accounts.filter(function(a){return(!s||a.company.toLowerCase().includes(s))&&(!r||a.rep===r)&&(!u||a.urgency===u)&&(!v||a.vertical===v)&&(!p||shownProductAreas(a.product_areas).indexOf(p)>=0);}).sort(function(a,b){return b[sort]-a[sort];});
   allP=1;renderAllTable();
 }
 function renderAllTable(){
