@@ -246,8 +246,7 @@ tr:hover td{background:rgba(0,154,222,0.03);}
 .ir-link{display:inline-block;margin-top:5px;font-size:10px;font-weight:700;color:var(--accent);text-decoration:none;letter-spacing:0.3px;}
 .ir-link:hover{text-decoration:underline;}
 .pa-tag{display:inline-flex;align-items:center;padding:2px 8px;border-radius:5px;font-size:10px;font-weight:700;white-space:nowrap;margin:1px;}
-.pa-hypercore{background:rgba(0,154,222,0.1);color:#009ADE;border:1px solid rgba(0,154,222,0.25);}
-.pa-reliant{background:rgba(25,79,144,0.12);color:#97CAEB;border:1px solid rgba(25,79,144,0.3);}
+.pa-edge{background:rgba(0,154,222,0.1);color:#009ADE;border:1px solid rgba(0,154,222,0.25);}
 .pa-acuvigil{background:rgba(247,141,45,0.08);color:#F78D2D;border:1px solid rgba(247,141,45,0.22);}
 .pa-connect{background:rgba(63,183,72,0.08);color:#3FB748;border:1px solid rgba(63,183,72,0.22);}
 .pa-vmware{background:rgba(220,38,38,0.08);color:#dc2626;border:1px solid rgba(220,38,38,0.25);}
@@ -537,9 +536,14 @@ function irHtml(company,box){
 
 
 // ── PRODUCT AREA CLASSIFICATION ──────────────────────────────
+// Per Ellie (7/22/26): HyperCore and Reliant no longer render as two separate product names —
+// on screen and in pitch copy both just say "Edge Computing" (the umbrella story is core HCI
+// appliance workloads through hardened edge deployments, so one label removes the redundant
+// two-tag/two-name split). The underlying Cluster 1 vs Cluster 2 signal from Column K is still
+// tracked internally (see classifyProductAreas/buildAccountPitch) purely to flavor the pitch
+// copy — it no longer produces a second visible tag.
 var PRODUCT_LABELS = {
-  hypercore: 'SC//HyperCore™',
-  reliant:   'SC//Reliant™',
+  edge:      'Edge Computing',
   acuvigil:  'SC//AcuVigil™',
   connect:   'SC//Connect™',
   vmware:    'Competitor: VMware',
@@ -549,7 +553,7 @@ var PRODUCT_LABELS = {
 
 // Cluster keyword sets — sourced from Product Topic Intent Report
 // Updated 7/2026 to the 7-cluster taxonomy:
-//   1: SC//HyperCore - Commercial   2: SC//HyperCore - At the Edge (tag: SC//Reliant)
+//   1: Edge Computing - Core HCI     2: Edge Computing - At the Edge
 //   3: SC//AcuVigil                 4: SC//Connect
 //   5: Competitor - VMware          6: Competitor - Nutanix
 //   7: Branded Keywords
@@ -559,9 +563,12 @@ var PRODUCT_LABELS = {
 // competitor-displacement logic (hasVMware/hasNutanix in buildAccountPitch) can detect them
 // cleanly from Column K. Per Ellie (7/18/26): Clusters 5/6 no longer render as Product Area
 // tags at all (removed from CLUSTER_TO_PRODUCTS and the Product Area filter below) — an
-// account whose only hit is a competitor cluster now falls through to the normal HyperCore
+// account whose only hit is a competitor cluster now falls through to the normal Edge Computing
 // fallback in Product Area, while the pitch's competitor-displacement text is unaffected since
-// it reads Column K hits directly, not the Product Area tags.
+// it reads Column K hits directly, not the Product Area tags. Per Ellie (7/22/26): Clusters 1
+// and 2 used to map to two separate branded tags (SC//HyperCore™ / SC//Reliant™) — both now
+// collapse to one 'edge' / "Edge Computing" tag (see PRODUCT_LABELS), though Column K still
+// distinguishes them internally so pitch copy can lead with core-HCI vs. hardened-edge framing.
 var CLUSTER_KEYWORDS = {
   1:['hyper-converged infrastructure','converged infrastructure','server virtualization','virtualization','virtual machines','bare-metal hypervisor','native hypervisor','virtual desktop infrastructure','vdi','virtual desktops','desktop as a service','daas','thin client','zero client','data protection','backup and recovery','backup software','cloud backup','backup as a service','baas','disaster recovery','business continuity','high availability','fault tolerance','recovery point objective','rpo','enterprise storage','storage area networks','san','network attached storage','nas','block storage','disk storage','raid','ransomware','it infrastructure','it operations','data center management','data center infrastructure management','dcim','server management','infrastructure as code','iac','infrastructure provisioning','automated provisioning','container orchestration','containerization','containers','kubernetes','ansible','hashicorp terraform','terraform','software deployment','deployment automation','total cost of ownership','tco'],
   2:['edge computing','edge ai','fog computing','internet of things','iot','industrial internet of things','smart retail','connected retail','hybrid cloud','multicloud','private cloud','cloud migration','cloud repatriation','cloud provisioning','software-defined infrastructure','high performance computing','gpu clusters','zero touch provisioning','ztp'],
@@ -573,7 +580,9 @@ var CLUSTER_KEYWORDS = {
 };
 // Per Ellie (7/18/26): 5 (VMware) and 6 (Nutanix) intentionally have no entry here — competitor
 // clusters no longer produce a Product Area tag (see comment above CLUSTER_KEYWORDS).
-var CLUSTER_TO_PRODUCTS = {1:['hypercore'],2:['reliant'],3:['acuvigil'],4:['connect'],7:['branded']};
+// Clusters 1 and 2 both roll up to the single 'edge' (Edge Computing) tag now — see note above
+// PRODUCT_LABELS.
+var CLUSTER_TO_PRODUCTS = {1:['edge'],2:['edge'],3:['acuvigil'],4:['connect'],7:['branded']};
 
 // Returns every cluster (1-7) whose keywords appear in the topic string, ordered by where
 // each cluster's first matching keyword phrase appears in the text — not by cluster number.
@@ -606,49 +615,40 @@ function classifyProductAreas(a){
   // tags built from them here preserve that same order.
   var hits=a.topic_kw?detectClusters(a.topic_kw):[];
 
-  // Per Ellie (7/18/26): simplified rule driven purely by whichever product cluster (1-4) is
-  // literally FIRST in Column K — not by what follows it:
-  //   Cluster 1 first   -> HyperCore ONLY, even if Cluster 2 also appears later in the cell.
-  //   Cluster 2 first   -> HyperCore AND Reliant together, in that fixed order, even if Cluster
-  //                        1 never appears (or appears later) — Cluster 2 is the "at the edge"
-  //                        variant of HyperCore, so the pairing is implied by Cluster 2 alone.
-  //   Cluster 3/4 first -> that cluster's single tag, unchanged.
-  // This must fire strictly off the raw Column K keyword hits (detectClusters) — never off the
-  // vertical/company-name heuristic below or the tertiary score fallback, both of which can
-  // independently add a 'reliant' tag (e.g. any manufacturing/industrial account gets 'reliant'
-  // added below regardless of what's in Column K). Conflating those with this flag previously
-  // caused every Cluster-1-only account in an edge-flavored vertical to incorrectly show both.
+  // Per Ellie (7/18/26, updated 7/22/26): driven by whichever product cluster (1-4) is literally
+  // FIRST in Column K. Clusters 1 and 2 both resolve to the single 'edge' tag now (see
+  // CLUSTER_TO_PRODUCTS), so which one fired first no longer changes what's shown — it only
+  // flavors the pitch copy (core HCI appliance framing vs. hardened/IoT edge framing) via
+  // orderedTags.primaryCluster below. Clusters 3/4 still map to their own single tag, unchanged.
   var productClusters=hits.filter(function(c){return c>=1&&c<=4;});
   var primaryCluster=productClusters[0];
-  var isCluster2Primary=(primaryCluster===2);
 
   // No forced reordering here — tags are added in hits.forEach below in the exact order their
-  // clusters first appear in the Column K text; shownProductAreas() below overrides the order
-  // for the Cluster-2-first case specifically (forced HyperCore-then-Reliant), since HyperCore
-  // may not even appear in Column K in that scenario.
+  // clusters first appear in the Column K text. Clusters 1 and 2 both add the same 'edge' tag
+  // (addTag is a no-op on repeat keys), so there's no longer a two-tag case to reorder.
   hits.forEach(function(c){(CLUSTER_TO_PRODUCTS[c]||[]).forEach(addTag);});
 
   // Secondary: vertical + company name keywords — appended after any Column K matches
   if(/\b(wan\b|sd.?wan|telecom|broadband|connectivity|fiber\b|isp\b)\b/.test(co))addTag('connect');
   if(/\b(monitor|surveillance|managed.?service|msp\b|noc\b|soc\b|network.?ops)\b/.test(co))addTag('acuvigil');
   if(v==='manufacturing & industrial'||v==='energy & utilities'||
-     /\b(edge|industrial|factory|plant|field.?site|oilfield|refiner)\b/.test(co))addTag('reliant');
+     /\b(edge|industrial|factory|plant|field.?site|oilfield|refiner)\b/.test(co))addTag('edge');
 
   // Tertiary: score/intent signals — only if no core product line has fired yet
-  var hasProduct=areas.hypercore||areas.reliant||areas.acuvigil||areas.connect;
-  if(!hasProduct&&(a.intent_product>15||a.intent_branded>10||a.ai_readiness>25||a.score>=45))addTag('hypercore');
-  if(!(areas.hypercore||areas.reliant||areas.acuvigil||areas.connect))addTag('hypercore');
+  var hasProduct=areas.edge||areas.acuvigil||areas.connect;
+  if(!hasProduct&&(a.intent_product>15||a.intent_branded>10||a.ai_readiness>25||a.score>=45))addTag('edge');
+  if(!(areas.edge||areas.acuvigil||areas.connect))addTag('edge');
 
   // Per Ellie (7/13/26): Branded tag is pulled in when Cluster 7 literally appears anywhere in
   // Column K (via the hits loop above), OR when Branded Intent score is over 55 — either
   // condition alone is enough to show the Scale Computing™ tag.
   if(a.intent_branded>55)addTag('branded');
 
-  // Attach the flag directly to the returned array (arrays are objects in JS, so this doesn't
-  // affect .length, .map, .forEach, etc.) so productAreaHtml and anything else reading
-  // product_areas can check the real Column K signal without re-deriving it or guessing from
-  // tag order.
-  orderedTags.cluster2Primary=isCluster2Primary;
+  // Per Ellie (7/22/26): still expose which product cluster (1 or 2) was literally first in
+  // Column K, even though both now collapse to the same visible 'edge' tag — buildAccountPitch
+  // uses this to flavor the pitch copy (core HCI appliance workloads vs. hardened/IoT edge
+  // deployments) without showing a second tag on screen.
+  orderedTags.primaryCluster=primaryCluster;
 
   return orderedTags;
 }
@@ -658,23 +658,13 @@ function classifyProductAreas(a){
 // can filter on exactly what's displayed, rather than the full (uncapped) product_areas array.
 // Cap to the first cluster called out in Column K — except the Branded (Cluster 7 / "Scale
 // Computing™") tag, which still shows if present (either a literal Column K hit or Branded
-// Intent score > 55 — see classifyProductAreas), and except when Cluster 2 is literally the
-// first product cluster (areas.cluster2Primary), where HyperCore + Reliant both show.
-// Per Ellie (7/18/26 follow-up): the two tags must display in Column K order, not a fixed
-// order — since Cluster 2 is by definition the first product cluster whenever this branch
-// fires, Reliant always comes first here; Cluster 1 (HyperCore), if it appears in Column K at
-// all, can only appear AFTER Cluster 2, so `areas` already has 'reliant' ahead of 'hypercore'
-// in that case. If Cluster 1 never appears in the cell, 'hypercore' is appended at the end
-// (there's no real Column K position for it — Cluster 2 alone implies it).
+// Intent score > 55 — see classifyProductAreas).
+// Per Ellie (7/22/26): Clusters 1 and 2 now share the single 'edge' (Edge Computing) tag, so the
+// old two-tag "Cluster 2 first shows HyperCore + Reliant together" branch is gone — there's only
+// ever one product tag here now.
 function shownProductAreas(areas){
   areas=areas||[];
-  var shown;
-  if(areas.cluster2Primary){
-    shown=areas.filter(function(k){return k==='hypercore'||k==='reliant';});
-    if(shown.indexOf('hypercore')<0)shown.push('hypercore');
-  } else {
-    shown=areas.slice(0,1);
-  }
+  var shown=areas.slice(0,1);
   if(areas.indexOf('branded')>=0&&shown.indexOf('branded')<0)shown.push('branded');
   return shown;
 }
@@ -686,25 +676,93 @@ function productAreaHtml(areas,wrap){
   return wrap?'<div style="display:flex;gap:3px;flex-wrap:wrap;margin-bottom:2px">'+html+'</div>':html;
 }
 
+// Per Ellie (7/22/26): short descriptor of the systems/sites that actually matter for each
+// vertical, woven into pitch copy so two accounts in the same cluster/score bucket don't read
+// as identical canned text — the pitch names what's actually running at that account's sites.
+var VERTICAL_CONTEXT = {
+  'Retail':                      'POS, self-checkout, and digital signage across every store',
+  'Grocery':                     'POS, digital pricing, and pharmacy systems across every store',
+  'Logistics & Transportation':  'warehouse, terminal, and in-vehicle systems across a distributed fleet',
+  'Food & Beverage':             'POS, kitchen display systems, and mobile ordering across every location',
+  'Energy & Utilities':          'substations, plants, and remote field sites with unreliable connectivity',
+  'Healthcare':                  'clinical and administrative systems across every care site',
+  'Manufacturing & Industrial':  'plant-floor OT systems, sensors, and production-line controllers',
+  'Financial Services':          'branch and ATM infrastructure across a distributed footprint',
+  'Automotive':                  'dealership, service-bay, and plant-floor systems',
+  'Aviation & Travel':           'property, terminal, and guest-facing systems across every location',
+  'Apparel':                     'POS, inventory, and omnichannel fulfillment systems across every store',
+  'Home & Building':             'store and jobsite systems across a distributed footprint',
+  'Technology':                  'distributed lab, data center, and remote-office infrastructure',
+  'Enterprise':                  'distributed sites and remote offices'
+};
+
+// Per Ellie (7/22/26): real, current scalecomputing.com assets to link from the pitch box, so
+// reps get a specific page to send/reference instead of a generic homepage link. Picked to match
+// either the product being pitched or the account's vertical — see assetForPitch below.
+// Verified live on scalecomputing.com July 2026.
+var VERTICAL_ASSETS = {
+  'Retail':                      {url:'https://www.scalecomputing.com/retail-edge-hci-solutions',label:'Edge Computing for Retail IT'},
+  'Grocery':                     {url:'https://www.scalecomputing.com/grocery-retail-it',label:'Edge Computing for Grocery & Food Retail'},
+  'Logistics & Transportation':  {url:'https://www.scalecomputing.com/transportation-edge-hci-solutions',label:'Edge Computing for Transportation & Fleet'},
+  'Food & Beverage':             {url:'https://www.scalecomputing.com/qsr-it-solutions',label:'Edge Computing for Quick-Serve Restaurants'},
+  'Energy & Utilities':          {url:'https://www.scalecomputing.com/blog/modernizing-energy-it-infrastructure-at-the-edge-with-sc-platform',label:'Modernizing Energy IT at the Edge'},
+  'Healthcare':                  {url:'https://www.scalecomputing.com/healthcare-edge-hci-solutions',label:'Edge Computing Solutions for Healthcare'},
+  'Manufacturing & Industrial':  {url:'https://www.scalecomputing.com/manufacturing-edge-hci-solutions',label:'Edge Computing Solutions for Manufacturing'},
+  'Financial Services':          {url:'https://www.scalecomputing.com/financial-services-edge-hci-solutions',label:'Edge Computing Solutions for Financial Services'},
+  'Automotive':                  {url:'https://www.scalecomputing.com/manufacturing-edge-hci-solutions',label:'Edge Computing Solutions for Manufacturing'},
+  'Aviation & Travel':           {url:'https://www.scalecomputing.com/hospitality-edge-hci-solutions',label:'Edge Computing Solutions for Hospitality & Travel'},
+  'Apparel':                     {url:'https://www.scalecomputing.com/retail-edge-hci-solutions',label:'Edge Computing for Retail IT'},
+  'Home & Building':             {url:'https://www.scalecomputing.com/retail-edge-hci-solutions',label:'Edge Computing for Retail IT'},
+  'Technology':                  {url:'https://www.scalecomputing.com/sc-platform',label:'SC//Platform Overview'},
+  'Enterprise':                  {url:'https://www.scalecomputing.com/edge-computing',label:'What Is Edge Computing?'}
+};
+var PRODUCT_ASSETS = {
+  edge:            {url:'https://www.scalecomputing.com/edge-computing',label:'What Is Edge Computing?'},
+  acuvigil:        {url:'https://www.scalecomputing.com/acuvigil',label:'SC//AcuVigil Managed Network Solutions'},
+  acuvigil_cstore: {url:'https://www.scalecomputing.com/resources/how-acuvigil-secures-and-simplifies-c-store-networks',label:'How SC//AcuVigil Secures C-Store Networks'},
+  connect:         {url:'https://www.scalecomputing.com/sc-connect',label:'SC//Connect Secure SD-WAN'},
+  branded:         {url:'https://www.scalecomputing.com/sc-platform',label:'SC//Platform Overview'},
+  competitor:      {url:'https://www.scalecomputing.com/landing-pages/vmware-alternative-break-free-of-complexity',label:'VMware Alternative: Break Free of Complexity'}
+};
+// Chooses which asset to link at the bottom of the pitch — prefers a competitor-displacement
+// asset when one is actively being displaced, then a product-specific asset for AcuVigil/Connect
+// (AcuVigil gets the convenience-store asset specifically for Retail/Grocery, since that's what
+// the real page covers), and otherwise the account's vertical-specific Edge Computing page.
+function assetForPitch(leadKey,vertical,competitor){
+  if(competitor)return PRODUCT_ASSETS.competitor;
+  if(leadKey==='acuvigil')return(vertical==='Retail'||vertical==='Grocery')?PRODUCT_ASSETS.acuvigil_cstore:PRODUCT_ASSETS.acuvigil;
+  if(leadKey==='connect')return PRODUCT_ASSETS.connect;
+  if(leadKey==='branded')return PRODUCT_ASSETS.branded;
+  return VERTICAL_ASSETS[vertical]||PRODUCT_ASSETS.edge;
+}
+function assetLinkHtml(asset){
+  if(!asset||!asset.url)return'';
+  return'<br><a class="ir-link" href="'+asset.url+'" target="_blank" rel="noopener">'+asset.label+' →</a>';
+}
+
 function buildAccountPitch(a){
   var ir=getIRContext(a.company);
   var areas=a.product_areas||classifyProductAreas(a);
   var hits=a.topic_kw?detectClusters(a.topic_kw):[];
   var s=a.score,b=a.intent_branded,p=a.intent_product,ai=a.ai_readiness;
-  var hasReliant=areas.indexOf('reliant')>=0;
+  var vertical=a.vertical||'Enterprise';
+  var vCtx=VERTICAL_CONTEXT[vertical]||'distributed sites and remote locations';
+  var co=(a.company||'').toLowerCase();
+  var v=(vertical||'').toLowerCase();
+  // Same secondary heuristic classifyProductAreas uses to flag an industrial/edge-flavored
+  // account when Column K has no cluster keyword data at all to go on.
+  var industrialEdgeSignal=(v==='manufacturing & industrial'||v==='energy & utilities'||
+     /\b(edge|industrial|factory|plant|field.?site|oilfield|refiner)\b/.test(co));
   var hasVMware=hits.indexOf(5)>=0;
   var hasNutanix=hits.indexOf(6)>=0;
-  var hasBrandedKw=hits.indexOf(7)>=0;
   var competitor=(hasVMware&&hasNutanix)?'VMware and Nutanix':hasVMware?'VMware':hasNutanix?'Nutanix':null;
   // hits is already ordered by where each cluster's keywords first appear in Column K, so the
   // first entry here is literally the first product cluster called out in Column K
   // (competitor/branded clusters 5-7 filtered out — those are handled separately).
   var productClusters=hits.filter(function(c){return c>=1&&c<=4;});
   var primaryCluster=productClusters[0];
-  // Per Ellie (7/18/26): matches the same simplified rule classifyProductAreas uses — Cluster 2
-  // being literally the FIRST product cluster in Column K is enough to trigger the combined
-  // HyperCore + Reliant pitch, regardless of whether Cluster 1 appears anywhere in the cell.
-  var isCluster2Primary=(primaryCluster===2);
+  var hasCluster1=productClusters.indexOf(1)>=0;
+  var hasCluster2=productClusters.indexOf(2)>=0;
 
   // Extract IR context — full note if meaningful, empty string if boilerplate
   var irNote='';
@@ -714,79 +772,78 @@ function buildAccountPitch(a){
   }
   // First sentence of IR note for use as a lead-in
   var irFirst=irNote?irNote.split(/\.\s+/)[0].trim():'';
-
-  var pitch='';
+  var lead='',leadKey='edge';
   var isBranded=areas.indexOf('branded')>=0; // matches the "Scale Computing™" tag — fires on a
-  // literal Cluster 7 keyword hit in Column K (hasBrandedKw) or Branded Intent score > 55
+  // literal Cluster 7 keyword hit in Column K or Branded Intent score > 55
 
-  // Per Ellie (7/13/26): the branded pitch used to hardcode "lead with SC//HyperCore™" even
-  // when the first product tag shown was something else (e.g. SC//Reliant™). Now it leads
-  // with whichever product tag actually appears first in areas — the same tag rendered as
-  // the primary Product Area chip — so the pitch never contradicts what's on screen.
-  var LEAD_PRODUCT_ORDER=['hypercore','reliant','acuvigil','connect'];
-  var leadKey=areas.filter(function(k){return LEAD_PRODUCT_ORDER.indexOf(k)>=0;})[0]||'hypercore';
-  var leadProduct=PRODUCT_LABELS[leadKey]||'SC//HyperCore™';
+  // Per Ellie (7/13/26): the branded pitch leads with whichever product tag actually appears
+  // first in areas — the same tag rendered as the primary Product Area chip — so the pitch
+  // never contradicts what's on screen. Per Ellie (7/22/26): HyperCore/Reliant collapsed into
+  // the single 'edge' key.
+  var LEAD_PRODUCT_ORDER=['edge','acuvigil','connect'];
+  var brandedLeadKey=areas.filter(function(k){return LEAD_PRODUCT_ORDER.indexOf(k)>=0;})[0]||'edge';
+  var leadProduct=PRODUCT_LABELS[brandedLeadKey]||'Edge Computing';
 
   // Branded Keywords always takes top priority — if they're searching Scale Computing
   // by name, that overrides any other cluster match woven into the same topic string.
   if(isBranded){
-    pitch=irFirst
-      ?irFirst+'. They have searched for Scale Computing keywords specifically, and have awareness of the Scale Computing brand and products. Skip the nurture sequence, lead with '+leadProduct+', and book a discovery call now.'
-      :'They have searched for Scale Computing keywords specifically, and have awareness of the Scale Computing brand and products. Lead with '+leadProduct+' and book a discovery call now.';
+    leadKey=brandedLeadKey;
+    lead='They\'ve searched for Scale Computing by name, so brand awareness is already there. Skip the nurture sequence, lead with '+leadProduct+', and ground the call in '+vCtx+'. Book a discovery call now.';
 
-  // Per Ellie (7/18/26): whenever Cluster 2 (Reliant/edge) is literally the FIRST product
-  // cluster called out in Column K, pitch both products together for compute at the edge —
-  // Cluster 2 is the "at the edge" variant of HyperCore, so the pairing is implied by Cluster 2
-  // alone, even if Cluster 1 never appears in the cell at all. This takes priority over the
-  // general cluster-specific branch below so Cluster 2 always gets this dedicated message
-  // whenever it's first, regardless of what (if anything) follows it.
-  } else if(isCluster2Primary){
+  // Per Ellie (7/22/26): when Column K calls out BOTH the core-HCI cluster (1) and the at-the-
+  // edge cluster (2), AND one of those two is literally the first product cluster in the cell,
+  // pitch the full spectrum together — this used to require Cluster 2 specifically to be first;
+  // now either order works, since both clusters map to the same on-screen "Edge Computing" tag.
+  // Still gated on primaryCluster being 1 or 2 so an account where Cluster 3/4 is genuinely first
+  // (and 1/2 only show up later in the cell) keeps pitching ONLY that first cluster's product,
+  // matching the single capped Product Area tag shown on screen.
+  } else if((primaryCluster===1||primaryCluster===2)&&hasCluster1&&hasCluster2){
+    leadKey='edge';
     var compAddCombo=competitor?' Position this as a '+competitor+' displacement opportunity on licensing simplicity and total cost of ownership.':'';
-    pitch=(irFirst?irFirst+'. ':'')+'Interest in both HCI appliance and edge computing research detected. Lead with SC//HyperCore™ and SC//Reliant™ together, positioning Scale Computing for compute at the edge, from core HCI appliance workloads to hardened, purpose-built edge deployments.'+compAddCombo;
+    lead='Interest spans both core HCI appliance workloads and edge deployments. Lead with Edge Computing from Scale Computing, from '+vCtx+' to hardened, purpose-built edge sites.'+compAddCombo;
 
-  // Cluster-specific pitch — driven by whichever product cluster is called out FIRST in Column
-  // K. Per Ellie (7/18/26): a cluster that shows up later in Column K but isn't in the first
-  // position (and isn't the dedicated Cluster-2-first combo above) no longer gets woven into
-  // the pitch at all — e.g. an account with Cluster 3 first and Clusters 1/2 also present later
-  // in the cell should pitch ONLY SC//AcuVigil™, matching the single Product Area tag shown on
-  // screen. Weaving a secondary product into the pitch text when it isn't shown as a Product
-  // Area tag created a mismatch between what's pitched and what's displayed, so that weave step
-  // has been removed — the pitch now always matches the single capped Product Area tag (except
-  // the Cluster-2-first combo, handled above). No entry for cluster 2 below — primaryCluster can
-  // never be 2 here, since isCluster2Primary already routes that case to the branch above.
-  } else if(primaryCluster){
-    var CLUSTER_LEAD={
-      1:'Interest in HCI appliance research detected. Lead with SC//HyperCore™ on simplified operations and total cost of ownership.',
-      3:'PCI compliance and network security research detected. Lead with SC//AcuVigil™ for managed network visibility and compliance readiness.',
-      4:'Active SD-WAN/SASE and branch connectivity research detected. Lead with SC//Connect™ on failover reliability and MPLS displacement economics.'
-    };
-    var lead=CLUSTER_LEAD[primaryCluster];
-    var compAdd1=(primaryCluster===1&&competitor)?' Position this as a '+competitor+' displacement opportunity on licensing simplicity and total cost of ownership.':'';
-    pitch=(irFirst?irFirst+'. ':'')+lead+compAdd1;
+  } else if(primaryCluster===1){
+    leadKey='edge';
+    var compAdd1=competitor?' Position this as a '+competitor+' displacement opportunity on licensing simplicity and total cost of ownership.':'';
+    lead='Interest in HCI appliance research detected. Lead with Edge Computing on simplified operations and total cost of ownership for '+vCtx+'.'+compAdd1;
+
+  } else if(primaryCluster===2){
+    leadKey='edge';
+    lead='Edge and IoT research detected. Lead with Edge Computing as hardened, purpose-built infrastructure for '+vCtx+', deployed and managed without a data center or on-site IT.';
+
+  } else if(primaryCluster===3){
+    leadKey='acuvigil';
+    lead='PCI compliance and network security research detected. Lead with SC//AcuVigil™ for managed network visibility and compliance readiness across '+vCtx+'.';
+
+  } else if(primaryCluster===4){
+    leadKey='connect';
+    lead='Active SD-WAN/SASE and branch connectivity research detected. Lead with SC//Connect™ on failover reliability and MPLS displacement economics for '+vCtx+'.';
+
   } else if(competitor){
-    pitch=irFirst
-      ?irFirst+'. Actively comparing vendors against '+competitor+' — lead with SC//HyperCore™ on licensing simplicity and total cost of ownership, and ask for a head-to-head discovery call.'
-      :'Actively comparing vendors against '+competitor+' — lead with SC//HyperCore™ on licensing simplicity and total cost of ownership, and ask for a head-to-head discovery call.';
+    leadKey='edge';
+    lead='Actively comparing vendors against '+competitor+'. Lead with Edge Computing on licensing simplicity and total cost of ownership for '+vCtx+', and ask for a head-to-head discovery call.';
+
   // Fallback: signal-based angles when no cluster keyword data is present
   } else if(ai>40&&s>=50){
-    pitch=irFirst
-      ?irFirst+'. High AI readiness on top of this investment trajectory makes SC//HyperCore™ a strong fit — position it as purpose-built edge AI infrastructure for simplified operations at scale.'
-      :'High AI readiness + active research — lead with SC//HyperCore™ as purpose-built edge AI infrastructure for simplified operations at scale.';
-  } else if(hasReliant){
-    pitch=irFirst
-      ?irFirst+'. Industrial/edge compute fit — SC//Reliant™ delivers hardened, purpose-built infrastructure without data center complexity or overhead.'
-      :'Industrial/edge compute fit — lead with SC//Reliant™ for hardened, purpose-built infrastructure without data center complexity.';
+    leadKey='edge';
+    lead='High AI readiness on top of this investment trajectory makes Edge Computing a strong fit. Position it as purpose-built edge AI infrastructure for '+vCtx+', built for simplified operations at scale.';
+
+  } else if(industrialEdgeSignal){
+    leadKey='edge';
+    lead='Industrial/edge compute fit across '+vCtx+'. Edge Computing delivers hardened, purpose-built infrastructure without data center complexity or overhead.';
+
   } else if(p>25){
-    pitch=irFirst
-      ?irFirst+'. Active HCI research in progress — lead with SC//HyperCore™ and get on the shortlist before it forms. Ask for a discovery call.'
-      :'Active HCI research in progress — lead with SC//HyperCore™ and get on the shortlist before it forms. Ask for a discovery call.';
+    leadKey='edge';
+    lead='Active HCI research in progress. Lead with Edge Computing and get on the shortlist before it forms for '+vCtx+'. Ask for a discovery call.';
+
   } else {
-    pitch=irFirst
-      ?irFirst+'. Lead with SC//HyperCore™ — all-in-one virtualization at the edge, no per-VM licensing, built for operational simplicity.'
-      :'Lead with SC//HyperCore™ — all-in-one virtualization at the edge, no per-VM licensing, built for operational simplicity.';
+    leadKey='edge';
+    lead='Lead with Edge Computing, all-in-one virtualization with no per-VM licensing, built for operational simplicity across '+vCtx+'.';
   }
 
-  return pitch;
+  var pitch=(irFirst?irFirst+'. ':'')+lead;
+  var asset=assetForPitch(leadKey,vertical,isBranded?null:competitor);
+  return pitch+assetLinkHtml(asset);
 }
 
 function pitchHtml(a,box){
@@ -937,7 +994,7 @@ var allF=[],allP=1,PS=25;
 // taxonomy order used everywhere else (CLUSTER_TO_PRODUCTS / PRODUCT_LABELS), not a dynamic
 // scan of the data, since these are code-defined categories rather than sheet-driven strings.
 // VMware/Nutanix intentionally excluded — they no longer render as Product Area tags at all.
-var PRODUCT_FILTER_ORDER=['hypercore','reliant','acuvigil','connect','branded'];
+var PRODUCT_FILTER_ORDER=['edge','acuvigil','connect','branded'];
 function populateFilters(){
   var rs=document.getElementById('filter-rep');rs.innerHTML='<option value="">All Reps</option>';
   [...new Set(D.accounts.map(function(a){return a.rep;}))].sort().forEach(function(r){rs.innerHTML+='<option value="'+r+'">'+r+'</option>';});
