@@ -223,6 +223,11 @@ tr:hover td{background:rgba(0,154,222,0.03);}
   td::before{content:attr(data-label);font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.6px;min-width:72px;flex-shrink:0;padding-top:3px;}
   td[data-label=""]::before{display:none;}
   td[data-label=""]{padding:2px 0;}
+  /* Per Ellie (7/22/26): .pitch-td's 200px max-width was sized for the desktop table column.
+     Pitches now run longer (vertical detail + score/momentum clause + asset link), so on mobile
+     — where td becomes a flexed card row with the rest of the row's width available — let the
+     text use that full width instead of wrapping tightly inside the old 200px cap. */
+  td .pitch-td{max-width:none;}
 
   .co-domain{display:none;}
   .acct-hdr{flex-wrap:wrap;}
@@ -700,6 +705,15 @@ var VERTICAL_CONTEXT = {
 // reps get a specific page to send/reference instead of a generic homepage link. Picked to match
 // either the product being pitched or the account's vertical — see assetForPitch below.
 // Verified live on scalecomputing.com July 2026.
+// Per Ellie (7/22/26): only listed here when the page is a genuine, specific fit for that
+// vertical — not an analogy or a generic catch-all. Deliberately has NO entry for 'Home &
+// Building' (that vertical mixes big-box home retailers with HVAC/construction/trades accounts,
+// two very different audiences no single page fits), 'Technology' (SC//Platform's own overview
+// page isn't actually vertical-specific — it's just the generic product page), or 'Enterprise'
+// (a catch-all for anything unclassified, so there's no real vertical signal to match against).
+// The dashboard has no company-size/employee-count column to match on either, so "does this
+// asset genuinely fit" is judged on vertical + product fit alone — assetForPitch returns no
+// asset at all (no link shown) rather than force one of these weak matches.
 var VERTICAL_ASSETS = {
   'Retail':                      {url:'https://www.scalecomputing.com/retail-edge-hci-solutions',label:'Edge Computing for Retail IT'},
   'Grocery':                     {url:'https://www.scalecomputing.com/grocery-retail-it',label:'Edge Computing for Grocery & Food Retail'},
@@ -709,15 +723,11 @@ var VERTICAL_ASSETS = {
   'Healthcare':                  {url:'https://www.scalecomputing.com/healthcare-edge-hci-solutions',label:'Edge Computing Solutions for Healthcare'},
   'Manufacturing & Industrial':  {url:'https://www.scalecomputing.com/manufacturing-edge-hci-solutions',label:'Edge Computing Solutions for Manufacturing'},
   'Financial Services':          {url:'https://www.scalecomputing.com/financial-services-edge-hci-solutions',label:'Edge Computing Solutions for Financial Services'},
-  'Automotive':                  {url:'https://www.scalecomputing.com/manufacturing-edge-hci-solutions',label:'Edge Computing Solutions for Manufacturing'},
+  'Automotive':                  {url:'https://www.scalecomputing.com/manufacturing-edge-hci-solutions',label:'Edge Computing Solutions for Manufacturing'}, // genuine fit: named accounts here are vehicle makers running literal assembly plants
   'Aviation & Travel':           {url:'https://www.scalecomputing.com/hospitality-edge-hci-solutions',label:'Edge Computing Solutions for Hospitality & Travel'},
-  'Apparel':                     {url:'https://www.scalecomputing.com/retail-edge-hci-solutions',label:'Edge Computing for Retail IT'},
-  'Home & Building':             {url:'https://www.scalecomputing.com/retail-edge-hci-solutions',label:'Edge Computing for Retail IT'},
-  'Technology':                  {url:'https://www.scalecomputing.com/sc-platform',label:'SC//Platform Overview'},
-  'Enterprise':                  {url:'https://www.scalecomputing.com/edge-computing',label:'What Is Edge Computing?'}
+  'Apparel':                     {url:'https://www.scalecomputing.com/retail-edge-hci-solutions',label:'Edge Computing for Retail IT'} // genuine fit: apparel accounts here are physical retail store chains
 };
 var PRODUCT_ASSETS = {
-  edge:            {url:'https://www.scalecomputing.com/edge-computing',label:'What Is Edge Computing?'},
   acuvigil:        {url:'https://www.scalecomputing.com/acuvigil',label:'SC//AcuVigil Managed Network Solutions'},
   acuvigil_cstore: {url:'https://www.scalecomputing.com/resources/how-acuvigil-secures-and-simplifies-c-store-networks',label:'How SC//AcuVigil Secures C-Store Networks'},
   connect:         {url:'https://www.scalecomputing.com/sc-connect',label:'SC//Connect Secure SD-WAN'},
@@ -727,17 +737,40 @@ var PRODUCT_ASSETS = {
 // Chooses which asset to link at the bottom of the pitch — prefers a competitor-displacement
 // asset when one is actively being displaced, then a product-specific asset for AcuVigil/Connect
 // (AcuVigil gets the convenience-store asset specifically for Retail/Grocery, since that's what
-// the real page covers), and otherwise the account's vertical-specific Edge Computing page.
+// the real page covers), and otherwise the account's vertical-specific Edge Computing page IF
+// one is a genuine fit. Per Ellie (7/22/26): no generic fallback anymore — if nothing here
+// actually matches this company/vertical, return null and skip the link entirely rather than
+// force a weak one (see assetLinkHtml).
 function assetForPitch(leadKey,vertical,competitor){
   if(competitor)return PRODUCT_ASSETS.competitor;
   if(leadKey==='acuvigil')return(vertical==='Retail'||vertical==='Grocery')?PRODUCT_ASSETS.acuvigil_cstore:PRODUCT_ASSETS.acuvigil;
   if(leadKey==='connect')return PRODUCT_ASSETS.connect;
   if(leadKey==='branded')return PRODUCT_ASSETS.branded;
-  return VERTICAL_ASSETS[vertical]||PRODUCT_ASSETS.edge;
+  return VERTICAL_ASSETS[vertical]||null;
 }
 function assetLinkHtml(asset){
   if(!asset||!asset.url)return'';
   return'<br><a class="ir-link" href="'+asset.url+'" target="_blank" rel="noopener">'+asset.label+' →</a>';
+}
+
+// Per Ellie (7/22/26): one short, actionable clause built from the account's own momentum/
+// branded/AI signals — NOT a stats readout. No raw numbers, no "sits at X" — this exists so the
+// rep gets a one-line steer on how to work the account (move fast, warm them up first, have a
+// backup angle ready), not a data dump. Returns at most one clause (the single most useful one,
+// checked in priority order) so the pitch stays brief. Returns '' when nothing here is actually
+// worth calling out — most accounts won't have a notable momentum/branded/AI signal, and a pitch
+// with no cue is better than a forced, meaningless one. skipBranded/skipAI let the caller drop a
+// cue that the branch's own lead sentence already covered.
+function accountSignalCue(a,skipBranded,skipAI){
+  var w=(typeof a.wow_pct==='number')?a.wow_pct:0,b=a.intent_branded,ai=a.ai_readiness;
+  if(w>=25)return'This one is heating up fast, don\'t let it sit.';
+  if(w<=-15)return'Interest has cooled off, confirm it\'s still live before you prioritize it.';
+  // Per Ellie (7/22/26): dropped the low-branded "warm them up" cue — a low/zero Branded Intent
+  // score is the default state for most accounts, not a notable signal, so it was showing up on
+  // the majority of pitches and reading like filler rather than an actual insight.
+  if(!skipBranded&&b>=40)return'They already know the Scale Computing name, so skip straight to the pitch.';
+  if(!skipAI&&ai>=35)return'If this angle stalls, their AI initiative is a strong pivot.';
+  return'';
 }
 
 function buildAccountPitch(a){
@@ -772,7 +805,7 @@ function buildAccountPitch(a){
   }
   // First sentence of IR note for use as a lead-in
   var irFirst=irNote?irNote.split(/\.\s+/)[0].trim():'';
-  var lead='',leadKey='edge';
+  var lead='',leadKey='edge',skipBranded=false,skipAI=false;
   var isBranded=areas.indexOf('branded')>=0; // matches the "Scale Computing™" tag — fires on a
   // literal Cluster 7 keyword hit in Column K or Branded Intent score > 55
 
@@ -788,7 +821,8 @@ function buildAccountPitch(a){
   // by name, that overrides any other cluster match woven into the same topic string.
   if(isBranded){
     leadKey=brandedLeadKey;
-    lead='They\'ve searched for Scale Computing by name, so brand awareness is already there. Skip the nurture sequence, lead with '+leadProduct+', and ground the call in '+vCtx+'. Book a discovery call now.';
+    skipBranded=true; // the lead sentence itself already covers branded awareness
+    lead='They\'ve searched for Scale Computing by name, so brand awareness is already there. Lead with '+leadProduct+' and ground the call in '+vCtx+'. Book a discovery call now.';
 
   // Per Ellie (7/22/26): when Column K calls out BOTH the core-HCI cluster (1) and the at-the-
   // edge cluster (2), AND one of those two is literally the first product cluster in the cell,
@@ -826,6 +860,7 @@ function buildAccountPitch(a){
   // Fallback: signal-based angles when no cluster keyword data is present
   } else if(ai>40&&s>=50){
     leadKey='edge';
+    skipAI=true; // the lead sentence itself already covers AI readiness
     lead='High AI readiness on top of this investment trajectory makes Edge Computing a strong fit. Position it as purpose-built edge AI infrastructure for '+vCtx+', built for simplified operations at scale.';
 
   } else if(industrialEdgeSignal){
@@ -841,7 +876,8 @@ function buildAccountPitch(a){
     lead='Lead with Edge Computing, all-in-one virtualization with no per-VM licensing, built for operational simplicity across '+vCtx+'.';
   }
 
-  var pitch=(irFirst?irFirst+'. ':'')+lead;
+  var cue=accountSignalCue(a,skipBranded,skipAI);
+  var pitch=(irFirst?irFirst+'. ':'')+lead+(cue?' '+cue:'');
   var asset=assetForPitch(leadKey,vertical,isBranded?null:competitor);
   return pitch+assetLinkHtml(asset);
 }
@@ -888,7 +924,7 @@ function processRawData(raw){
     var priority=calcPriority(score,wow_pct,ib,ai,ip);
     var _acc={company,vertical,intent_product:ip,intent_branded:ib,ai_readiness:ai,score,topic_kw};
     var product_areas=classifyProductAreas(_acc);
-    var _accFull={company,vertical,intent_product:ip,intent_branded:ib,ai_readiness:ai,score,urgency,product_areas,topic_kw};
+    var _accFull={company,vertical,intent_product:ip,intent_branded:ib,ai_readiness:ai,score,wow_pct,urgency,product_areas,topic_kw};
     var pitch=buildAccountPitch(_accFull);
     accounts.push({company,rep,domain,score,wow_pct,intent_product:ip,intent_branded:ib,ai_readiness:ai,ad_impressions:adI,ad_clicks:adC,exp_count:exp,last_score:last,vertical,urgency,priority,product_areas,pitch,topic_kw});
   });
