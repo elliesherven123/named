@@ -275,6 +275,8 @@ tr:hover td{background:rgba(0,154,222,0.03);}
 .ctag-caret{font-size:8px;}
 .contact-detail-row td{padding:0 12px 14px;background:rgba(210,222,36,0.03);border-top:none;}
 .contact-detail-row .contact-box{margin:0;}
+.new-contact-tag{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;white-space:nowrap;background:rgba(63,183,72,0.12);border:1px solid rgba(63,183,72,0.35);color:var(--green);}
+.nav-count-badge{display:inline-block;background:var(--gold);color:#07111e;font-size:10px;font-weight:800;padding:1px 6px;border-radius:10px;margin-left:2px;vertical-align:middle;}
 .contact-box{background:rgba(210,222,36,0.06);border:1px solid rgba(210,222,36,0.22);border-radius:8px;padding:10px 12px;margin:10px 0 6px;}
 .contact-box-title{font-size:10px;font-weight:800;color:var(--gold);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:8px;}
 .contact-row{display:flex;flex-direction:column;gap:1px;padding:7px 0;border-top:1px solid rgba(210,222,36,0.15);}
@@ -339,7 +341,7 @@ tr:hover td{background:rgba(0,154,222,0.03);}
   <button class="nav-btn" onclick="showTab('five',this)">⚡ Your 5</button>
   <button class="nav-btn" onclick="showTab('drilldown',this)">👤 Rep Drilldown</button>
   <button class="nav-btn" onclick="showTab('movers',this)">🔥 Big Movers</button>
-  <button class="nav-btn" onclick="showTab('contacts',this)">📇 Contacts</button>
+  <button class="nav-btn" id="nav-btn-contacts" onclick="showTab('contacts',this)">📇 Contacts</button>
 </div>
 
 <div class="content">
@@ -373,6 +375,9 @@ tr:hover td{background:rgba(0,154,222,0.03);}
 
 <div class="tab-panel" id="tab-contacts">
   <div class="sh">Key Contacts <span class="sh-hint" id="contacts-tab-hint">Accounts with a named contact on file — ranked by Hot Score</span></div>
+  <div class="filter-bar" style="margin-bottom:12px;">
+    <select class="fs" id="filter-contacts-rep" onchange="renderContactsTab()"><option value="">All Reps</option></select>
+  </div>
   <div id="contacts-list"></div>
 </div>
 
@@ -412,7 +417,7 @@ tr:hover td{background:rgba(0,154,222,0.03);}
     </div>
 
   <div class="filter-bar">
-    <input class="fi" type="text" id="search-all" placeholder="Search company…" oninput="filterAll()">
+    <input class="fi" type="text" id="search-all" placeholder="Search company or contact…" oninput="filterAll()">
     <select class="fs" id="filter-rep" onchange="filterAll()"><option value="">All Reps</option></select>
     <select class="fs" id="filter-urgency" onchange="filterAll()">
       <option value="">All Urgency</option>
@@ -1149,6 +1154,13 @@ function keyContactsHtml(a){
   return '<div class="contact-box"><div class="contact-box-title">📇 Key Contact'+(a.contacts.length>1?'s':'')+' on File</div>'+
     a.contacts.map(contactRowHtml).join('')+'</div>';
 }
+// True if this account's contact(s) weren't in the Contacts sheet as of the last tab we'd
+// already processed — see the localStorage diff in init(). Scoped to the Contacts tab only,
+// per Ellie (7/29/26) — this is a "what's new" signal, not a reason to reorder or badge it
+// anywhere else.
+function isNewContact(a){
+  return !!(D.new_contact_keys&&D.new_contact_keys.indexOf(normalizeCompanyForMatch(a.company))>-1);
+}
 
 function showTab(n,btn){document.querySelectorAll('.tab-panel').forEach(function(p){p.classList.remove('active');});document.querySelectorAll('.nav-btn').forEach(function(b){b.classList.remove('active');});document.getElementById('tab-'+n).classList.add('active');if(btn)btn.classList.add('active');window.scrollTo(0,0);}
 
@@ -1167,7 +1179,13 @@ function renderAll_(){
 
   var tb=document.getElementById('tbody-top10');tb.innerHTML='';
   D.accounts.slice(0,10).forEach(function(a,i){
-    tb.innerHTML+='<tr><td data-label="">'+(i+1)+'</td><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div><div class="co-name">'+a.company+' '+contactBadge(a)+'</div><div class="co-domain">'+a.domain+'</div></div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Rep" style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700;font-size:12px">'+a.rep+'</td><td data-label="Score">'+sp(a.score)+'</td><td data-label="WoW">'+wowHtml(a.wow_pct)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Product Area">'+productAreaHtml(a.product_areas,true)+'</td><td data-label="Pitch">'+pitchHtml(a,false)+'</td><td data-label="IR Intelligence">'+irHtml(a.company,false)+'</td><td data-label="Actions">'+actions(a.company)+'</td></tr>';
+    var hasContacts=a.contacts&&a.contacts.length>0;
+    var rowId='top10-contact-'+i;
+    var badge=hasContacts?contactBadgeToggle(a,rowId):'';
+    tb.innerHTML+='<tr><td data-label="">'+(i+1)+'</td><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div><div class="co-name">'+a.company+' '+badge+'</div><div class="co-domain">'+a.domain+'</div></div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Rep" style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700;font-size:12px">'+a.rep+'</td><td data-label="Score">'+sp(a.score)+'</td><td data-label="WoW">'+wowHtml(a.wow_pct)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Product Area">'+productAreaHtml(a.product_areas,true)+'</td><td data-label="Pitch">'+pitchHtml(a,false)+'</td><td data-label="IR Intelligence">'+irHtml(a.company,false)+'</td><td data-label="Actions">'+actions(a.company)+'</td></tr>';
+    if(hasContacts){
+      tb.innerHTML+='<tr class="contact-detail-row" id="'+rowId+'" style="display:none"><td colspan="11" data-label="">'+keyContactsHtml(a)+'</td></tr>';
+    }
   });
 
   var ft=document.getElementById('five-tabs');ft.innerHTML='';
@@ -1210,6 +1228,11 @@ var PRODUCT_FILTER_ORDER=['edge','acuvigil','connect','branded'];
 function populateFilters(){
   var rs=document.getElementById('filter-rep');rs.innerHTML='<option value="">All Reps</option>';
   [...new Set(D.accounts.map(function(a){return a.rep;}))].sort().forEach(function(r){rs.innerHTML+='<option value="'+r+'">'+r+'</option>';});
+  var crs=document.getElementById('filter-contacts-rep');
+  if(crs){
+    crs.innerHTML='<option value="">All Reps</option>';
+    [...new Set(D.accounts.map(function(a){return a.rep;}))].sort().forEach(function(r){crs.innerHTML+='<option value="'+r+'">'+r+'</option>';});
+  }
   var vs=document.getElementById('filter-vertical');vs.innerHTML='<option value="">All Verticals</option>';
   [...new Set(D.accounts.map(function(a){return a.vertical;}))].sort().forEach(function(v){vs.innerHTML+='<option value="'+v+'">'+v+'</option>';});
   var ps=document.getElementById('filter-product');ps.innerHTML='<option value="">All Product Areas</option>';
@@ -1227,7 +1250,10 @@ function filterAll(){
   // product_areas array — this must match exactly what's visible in the Product Area column,
   // otherwise a company could match the filter on a tag that isn't actually shown for it (e.g.
   // a secondary cluster that got capped out of display).
-  allF=D.accounts.filter(function(a){return(!s||a.company.toLowerCase().includes(s))&&(!r||a.rep===r)&&(!u||a.urgency===u)&&(!v||a.vertical===v)&&(!p||shownProductAreas(a.product_areas).indexOf(p)>=0)&&(!hc||(a.contacts&&a.contacts.length>0));}).sort(function(a,b){return b[sort]-a[sort];});
+  // Per Ellie (7/29/26): search also matches a named contact's first/last name or title, not
+  // just the company — so "who do we know named Priya" finds the right account even if you
+  // don't remember which company she's at.
+  allF=D.accounts.filter(function(a){return(!s||a.company.toLowerCase().includes(s)||(a.contacts&&a.contacts.some(function(c){return((c.firstName||'')+' '+(c.lastName||'')).toLowerCase().includes(s)||(c.title||'').toLowerCase().includes(s);})))&&(!r||a.rep===r)&&(!u||a.urgency===u)&&(!v||a.vertical===v)&&(!p||shownProductAreas(a.product_areas).indexOf(p)>=0)&&(!hc||(a.contacts&&a.contacts.length>0));}).sort(function(a,b){return b[sort]-a[sort];});
   allP=1;renderAllTable();
 }
 function renderAllTable(){
@@ -1258,17 +1284,25 @@ function renderMovers(){
   D.movers.forEach(function(a){el.innerHTML+='<div class="mover-card"><div style="flex:1"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">'+logo(a.domain,28)+'<span style="font-weight:800;font-size:15px">'+a.company+'</span>'+contactBadge(a)+ub(a.urgency)+vtag(a.vertical)+'</div><div style="font-size:12px;color:var(--muted);margin-bottom:8px">Rep: <span style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700">'+a.rep+'</span> · Score: '+sp(a.score)+'</div>'+productAreaHtml(a.product_areas,true)+pitchHtml(a,true)+keyContactsHtml(a)+irHtml(a.company,true)+actions(a.company)+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:8px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\"" +" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button>"+'</div><div class="mover-pct">▲'+a.wow_pct.toFixed(1)+'%<span>WoW</span></div></div>';});
 }
 function renderContactsTab(){
+  var navBtn=document.getElementById('nav-btn-contacts');
+  if(navBtn)navBtn.innerHTML='📇 Contacts'+((D.contacts_ranked&&D.contacts_ranked.length)?' <span class="nav-count-badge">'+D.contacts_ranked.length+'</span>':'');
   var hint=document.getElementById('contacts-tab-hint');
   if(hint)hint.textContent='Accounts with a named contact on file — ranked by Hot Score'+(D.contacts_tab?' · contacts tab: '+D.contacts_tab:'');
+  var repSel=document.getElementById('filter-contacts-rep');
+  var repFilter=repSel?repSel.value:'';
   var el=document.getElementById('contacts-list');el.innerHTML='';
-  if(!D.contacts_ranked||!D.contacts_ranked.length){
+  var list=(D.contacts_ranked||[]).filter(function(a){return!repFilter||a.rep===repFilter;});
+  if(!list.length){
     el.innerHTML='<div class="contacts-empty"><div class="contacts-empty-icon">📇</div>'+
-      (D.contacts_tab?'No accounts in this week\'s data matched a contact from the "'+D.contacts_tab+'" tab yet.':'No contacts sheet found — check that it\'s shared as "Anyone with the link can view" and has a dated tab (e.g. 7.29.2026).')+
+      (!D.contacts_ranked||!D.contacts_ranked.length?
+        (D.contacts_tab?'No accounts in this week\'s data matched a contact from the "'+D.contacts_tab+'" tab yet.':'No contacts sheet found — check that it\'s shared as "Anyone with the link can view" and has a dated tab (e.g. 7.29.2026).')
+        :'No contacts on file for '+repFilter+' yet.')+
       '</div>';
     return;
   }
-  D.contacts_ranked.forEach(function(a){
-    el.innerHTML+='<div class="mover-card"><div style="flex:1"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">'+logo(a.domain,28)+'<span style="font-weight:800;font-size:15px">'+a.company+'</span>'+ub(a.urgency)+vtag(a.vertical)+'</div><div style="font-size:12px;color:var(--muted);margin-bottom:8px">Rep: <span style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700">'+a.rep+'</span> · Score: '+sp(a.score)+' · WoW: '+wowHtml(a.wow_pct)+'</div>'+productAreaHtml(a.product_areas,true)+pitchHtml(a,true)+keyContactsHtml(a)+irHtml(a.company,true)+actions(a.company)+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:8px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\"" +" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button>"+'</div></div>';
+  list.forEach(function(a){
+    var newTag=isNewContact(a)?'<span class="new-contact-tag">🆕 New this week</span>':'';
+    el.innerHTML+='<div class="mover-card"><div style="flex:1"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">'+logo(a.domain,28)+'<span style="font-weight:800;font-size:15px">'+a.company+'</span>'+newTag+ub(a.urgency)+vtag(a.vertical)+'</div><div style="font-size:12px;color:var(--muted);margin-bottom:8px">Rep: <span style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700">'+a.rep+'</span> · Score: '+sp(a.score)+' · WoW: '+wowHtml(a.wow_pct)+'</div>'+productAreaHtml(a.product_areas,true)+pitchHtml(a,true)+keyContactsHtml(a)+irHtml(a.company,true)+actions(a.company)+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:8px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\"" +" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button>"+'</div></div>';
   });
 }
 function renderBranded(){
@@ -1557,8 +1591,31 @@ async function init(){
       }
     }catch(e){contactsByCompany={};contactsTab=null;}
 
+    // "New this week" — diff this week's contact companies against the last tab we'd already
+    // processed (stored in localStorage), so the Contacts tab can flag names that weren't there
+    // last time instead of making a rep re-scan the whole ranked list to spot what changed.
+    // First run ever (no lastTab on file) intentionally flags nothing — everything looking
+    // "new" on day one would just be noise. If localStorage is unavailable, this just no-ops.
+    var newContactKeys=[];
+    try{
+      if(contactsTab){
+        var curContactKeys=Object.keys(contactsByCompany);
+        var lastContactsTab=localStorage.getItem('sc_contacts_last_tab');
+        if(lastContactsTab===contactsTab){
+          newContactKeys=JSON.parse(localStorage.getItem('sc_contacts_new_keys')||'[]');
+        }else{
+          var prevContactKeys=JSON.parse(localStorage.getItem('sc_contacts_seen_keys')||'[]');
+          newContactKeys=lastContactsTab?curContactKeys.filter(function(k){return prevContactKeys.indexOf(k)===-1;}):[];
+          localStorage.setItem('sc_contacts_last_tab',contactsTab);
+          localStorage.setItem('sc_contacts_seen_keys',JSON.stringify(curContactKeys));
+          localStorage.setItem('sc_contacts_new_keys',JSON.stringify(newContactKeys));
+        }
+      }
+    }catch(e){newContactKeys=[];}
+
     D=processRawData(raw,contactsByCompany);
     D.contacts_tab=contactsTab;
+    D.new_contact_keys=newContactKeys;
     document.getElementById('footer-meta').textContent='Live data · tab: '+found.tab+(contactsTab?' · contacts: '+contactsTab:' · contacts: none found');
     document.getElementById('loading-screen').style.display='none';
     document.getElementById('main').style.display='block';
