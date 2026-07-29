@@ -267,6 +267,28 @@ tr:hover td{background:rgba(0,154,222,0.03);}
 .pa-vmware{background:rgba(220,38,38,0.08);color:#dc2626;border:1px solid rgba(220,38,38,0.25);}
 .pa-nutanix{background:rgba(220,38,38,0.08);color:#dc2626;border:1px solid rgba(220,38,38,0.25);}
 .pa-branded{background:rgba(250,204,21,0.10);color:#facc15;border:1px solid rgba(250,204,21,0.28);}
+
+/* Contacts (7/29/26) */
+.ctag{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;white-space:nowrap;background:rgba(210,222,36,0.12);border:1px solid rgba(210,222,36,0.35);color:var(--gold);}
+.ctag-click{cursor:pointer;transition:background 0.15s;}
+.ctag-click:hover{background:rgba(210,222,36,0.22);}
+.ctag-caret{font-size:8px;}
+.contact-detail-row td{padding:0 12px 14px;background:rgba(210,222,36,0.03);border-top:none;}
+.contact-detail-row .contact-box{margin:0;}
+.contact-box{background:rgba(210,222,36,0.06);border:1px solid rgba(210,222,36,0.22);border-radius:8px;padding:10px 12px;margin:10px 0 6px;}
+.contact-box-title{font-size:10px;font-weight:800;color:var(--gold);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:8px;}
+.contact-row{display:flex;flex-direction:column;gap:1px;padding:7px 0;border-top:1px solid rgba(210,222,36,0.15);}
+.contact-row:first-of-type{border-top:none;padding-top:0;}
+.contact-name{font-size:13px;font-weight:700;color:var(--text);}
+.contact-title{font-size:11px;color:var(--muted);}
+.contact-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px;}
+.contact-phone{font-size:11px;color:var(--gold);text-decoration:none;font-weight:600;}
+.contact-phone:hover{text-decoration:underline;}
+.contact-priority-tag{font-size:9px;font-weight:700;padding:1px 7px;border-radius:10px;background:rgba(0,154,222,0.1);color:var(--accent);border:1px solid rgba(0,154,222,0.25);white-space:nowrap;}
+.contact-li{font-size:10px;font-weight:700;color:var(--accent);text-decoration:none;}
+.contact-li:hover{text-decoration:underline;}
+.contacts-empty{text-align:center;padding:48px 20px;color:var(--muted);}
+.contacts-empty-icon{font-size:40px;margin-bottom:12px;}
 </style>
 </head>
 <body>
@@ -317,6 +339,7 @@ tr:hover td{background:rgba(0,154,222,0.03);}
   <button class="nav-btn" onclick="showTab('five',this)">⚡ Your 5</button>
   <button class="nav-btn" onclick="showTab('drilldown',this)">👤 Rep Drilldown</button>
   <button class="nav-btn" onclick="showTab('movers',this)">🔥 Big Movers</button>
+  <button class="nav-btn" onclick="showTab('contacts',this)">📇 Contacts</button>
 </div>
 
 <div class="content">
@@ -346,6 +369,11 @@ tr:hover td{background:rgba(0,154,222,0.03);}
 <div class="tab-panel" id="tab-movers">
   <div class="sh">Big Movers <span class="sh-hint">Highest WoW gainers — window is NOW</span></div>
   <div id="movers-list"></div>
+</div>
+
+<div class="tab-panel" id="tab-contacts">
+  <div class="sh">Key Contacts <span class="sh-hint" id="contacts-tab-hint">Accounts with a named contact on file — ranked by Hot Score</span></div>
+  <div id="contacts-list"></div>
 </div>
 
 
@@ -394,6 +422,9 @@ tr:hover td{background:rgba(0,154,222,0.03);}
     </select>
     <select class="fs" id="filter-vertical" onchange="filterAll()"><option value="">All Verticals</option></select>
     <select class="fs" id="filter-product" onchange="filterAll()"><option value="">All Product Areas</option></select>
+    <label class="fs" style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;">
+      <input type="checkbox" id="filter-has-contact" onchange="filterAll()" style="cursor:pointer;">📇 Has Contact
+    </label>
     <select class="fs" id="sort-all" onchange="filterAll()">
       <option value="score">Sort: Hot Score</option>
       <option value="priority">Sort: Priority</option>
@@ -422,6 +453,12 @@ tr:hover td{background:rgba(0,154,222,0.03);}
 // CONFIG
 // ═══════════════════════════════════════════════════════════════
 var SHEET_ID = '1AQrVdqo6YQ4sS5l5KbZg9t9W_ZzbIA99yuy5Bd6n5wU';
+// Per Ellie (7/29/26): separate Google Sheet of syndicated contacts (name/title/phone per
+// company). Same weekly-dated-tab convention as the Hot Accounts sheet — scanned the same way
+// via scanForTab() so it automatically picks up newer tabs as they're added, no code change
+// needed week to week. Currently a single tab ("7.29.26").
+var CONTACTS_SHEET_ID = '1aHJ6oX_nRIz0bShoBBNI0j-5Je46bkLKLJJjVI2Acls';
+var CONTACT_PRIORITY_BOOST = 12; // added to Priority Score (Your 5 ranking) when 1+ contacts are on file — see calcPriority
 var SAM_DEFAULT_KEY = 'SAM-df2e71ba-c0b2-4693-815f-8f3d3756f2ac';
 
 var COL = {
@@ -436,6 +473,25 @@ var COL = {
   last_score:"Last Week's Score",
   topic_keywords:'Product Topic Cluster Keywords'
 };
+var COL_CONTACTS = {
+  firstName:'firstName', lastName:'lastName', phone:'phone', company:'company',
+  title:'title', country:'country', topPriority:'organization_biggest_it_priority'
+};
+
+// Normalizes a company name down to a bare matching key — strips legal suffixes, punctuation,
+// and a leading "The" so "Ryder System, Inc." (contacts sheet) and "Ryder System, Inc." or
+// "Ryder System" (Hot Accounts sheet) resolve to the same key. Verified against real rows from
+// both live sheets on 7/29/26 (XPO, Ryder System Inc, United Parcel Service, and CSX all matched
+// correctly with this logic).
+function normalizeCompanyForMatch(name){
+  var s=(name||'').toLowerCase();
+  s=s.replace(/&/g,' and ');
+  s=s.replace(/[.,''`]/g,'');
+  s=s.replace(/^\s*the\s+/,'');
+  s=s.replace(/\s+(inc|incorporated|corp|corporation|co|company|llc|ltd|lp|group|holdings)\s*$/,'');
+  s=s.replace(/[^a-z0-9]+/g,' ').trim();
+  return s;
+}
 
 var RC = {
   'Kevin Holmes':'#6366f1','Phil Stead':'#D2DE24','Jacob Smith':'#3FB748',
@@ -459,7 +515,13 @@ function calcUrgency(s,w,b,p,a){
   if(p>35&&s>=45)return 'Warm Up';
   return 'Monitor';
 }
-function calcPriority(s,w,b,a,p){return Math.round(((s/80)*40+Math.min(w/60,1)*25+(b/90)*20+(a/71)*10+(p/65)*5)*10)/10;}
+// Per Ellie (7/29/26): added a flat +12 point bonus when the account has 1+ matched contacts on
+// file. A real name and phone number beats an anonymous signal, so this is weighted just above
+// Branded Intent (20) worth of impact at the boost's full value, without letting a contact alone
+// override a genuinely hot, contact-less account (Score alone is still worth up to 40). Deliberately
+// scoped to Priority Score only (drives Your 5 ranking) — Top 10 / Rep Drilldown stay sorted by
+// raw Hot Score, unchanged, per the existing documented distinction between those views.
+function calcPriority(s,w,b,a,p,hasContact){return Math.round(((s/80)*40+Math.min(w/60,1)*25+(b/90)*20+(a/71)*10+(p/65)*5+(hasContact?CONTACT_PRIORITY_BOOST:0))*10)/10;}
 
 // ── IR CONTEXT LOOKUP ────────────────────────────────────────
 // Public companies: sourced from IR docs, earnings calls, press releases.
@@ -918,7 +980,8 @@ function parseGvizResponse(data){
   return{headers:cols,rows:rows};
 }
 
-function processRawData(raw){
+function processRawData(raw,contactsByCompany){
+  contactsByCompany=contactsByCompany||{};
   var headers=raw.headers,rows=raw.rows;
   function col(row,name){var i=headers.indexOf(name);return i>=0?row[i]:null;}
   function num(v,fb){var n=parseFloat(v);return isNaN(n)?(fb||0):n;}
@@ -941,13 +1004,14 @@ function processRawData(raw){
     var last=Math.round(num(col(row,COL.last_score))*10)/10;
     var topic_kw=String(col(row,COL.topic_keywords)||'').trim();
     var vertical=classifyVertical(company);
+    var contacts=contactsByCompany[normalizeCompanyForMatch(company)]||[];
     var urgency=calcUrgency(score,wow_pct,ib,ip,ai);
-    var priority=calcPriority(score,wow_pct,ib,ai,ip);
+    var priority=calcPriority(score,wow_pct,ib,ai,ip,contacts.length>0);
     var _acc={company,vertical,intent_product:ip,intent_branded:ib,ai_readiness:ai,score,topic_kw};
     var product_areas=classifyProductAreas(_acc);
     var _accFull={company,vertical,intent_product:ip,intent_branded:ib,ai_readiness:ai,score,wow_pct,urgency,product_areas,topic_kw};
     var pitch=buildAccountPitch(_accFull);
-    accounts.push({company,rep,domain,score,wow_pct,intent_product:ip,intent_branded:ib,ai_readiness:ai,ad_impressions:adI,ad_clicks:adC,exp_count:exp,last_score:last,vertical,urgency,priority,product_areas,pitch,topic_kw});
+    accounts.push({company,rep,domain,score,wow_pct,intent_product:ip,intent_branded:ib,ai_readiness:ai,ad_impressions:adI,ad_clicks:adC,exp_count:exp,last_score:last,vertical,urgency,priority,product_areas,pitch,topic_kw,contacts});
   });
   accounts.sort(function(a,b){return b.score-a.score;});
   var repMap={};
@@ -971,12 +1035,56 @@ function processRawData(raw){
   var movers=accounts.filter(function(a){return a.wow_pct>0;}).sort(function(a,b){return b.wow_pct-a.wow_pct;}).slice(0,20);
   var branded=accounts.filter(function(a){return a.intent_branded>0;}).sort(function(a,b){return b.intent_branded-a.intent_branded;});
   var unassigned=accounts.filter(function(a){return a.rep==='Unassigned';}).slice(0,30);
+  var contacts_ranked=accounts.filter(function(a){return a.contacts&&a.contacts.length>0;}).sort(function(a,b){return b.score-a.score;});
   var strike=accounts.filter(function(a){return a.urgency==='Strike Now';}).length;
   var warm=accounts.filter(function(a){return a.urgency==='Warm Up';}).length;
-  return{accounts,rep_summary,rep_top10,top5,movers,branded,unassigned,strike_count:strike,warmup_count:warm,monitor_count:accounts.length-strike-warm,total:accounts.length};
+  return{accounts,rep_summary,rep_top10,top5,movers,branded,unassigned,contacts_ranked,strike_count:strike,warmup_count:warm,monitor_count:accounts.length-strike-warm,total:accounts.length};
 }
 
 function guessDomain(co){return co.toLowerCase().replace(/[^a-z0-9\s]/g,'').replace(/\b(the|inc|llc|ltd|co|corp|company|group|holdings|international|services|solutions|systems|technologies|technology|enterprises|global)\b/g,'').trim().split(/\s+/)[0]+'.com';}
+
+// Builds a lookup of normalized-company-key -> array of contact records from a parsed Contacts
+// sheet tab. See normalizeCompanyForMatch() for the matching key logic.
+function buildContactIndex(craw){
+  var idx={};
+  if(!craw)return idx;
+  var headers=craw.headers,rows=craw.rows;
+  function col(row,name){var i=headers.indexOf(name);return i>=0?row[i]:null;}
+  rows.forEach(function(row){
+    var company=String(col(row,COL_CONTACTS.company)||'').trim();
+    var key=normalizeCompanyForMatch(company);
+    if(!key)return;
+    var contact={
+      firstName:String(col(row,COL_CONTACTS.firstName)||'').trim(),
+      lastName:String(col(row,COL_CONTACTS.lastName)||'').trim(),
+      phone:String(col(row,COL_CONTACTS.phone)||'').trim(),
+      title:String(col(row,COL_CONTACTS.title)||'').trim(),
+      company:company,
+      country:String(col(row,COL_CONTACTS.country)||'').trim(),
+      topPriority:String(col(row,COL_CONTACTS.topPriority)||'').trim()
+    };
+    if(!contact.firstName&&!contact.lastName)return;
+    if(!idx[key])idx[key]=[];
+    idx[key].push(contact);
+  });
+  return idx;
+}
+// Validates a gviz response actually came from the Contacts sheet (not some other public sheet
+// falling through) before we trust it — mirrors isHotAccountData's approach.
+function isContactData(data){
+  if(!data||data.status==='error')return false;
+  if(!data.table||!data.table.cols)return false;
+  var labels=data.table.cols.map(function(c){return(c.label||c.id||'').toLowerCase();});
+  return labels.indexOf('company')>=0&&labels.indexOf('firstname')>=0;
+}
+// Formats a raw digit-string phone number (e.g. "8007552728") as (800) 755-2728. Falls back to
+// the raw value unchanged if it isn't a clean 10 or 11-digit US number.
+function formatPhone(p){
+  var d=(p||'').replace(/\D/g,'');
+  if(d.length===11&&d[0]==='1')d=d.slice(1);
+  if(d.length!==10)return p||'';
+  return'('+d.slice(0,3)+') '+d.slice(3,6)+'-'+d.slice(6);
+}
 
 // ── RENDER HELPERS ────────────────────────────────────────────
 function logo(domain,size){size=size||22;return '<img class="co-logo" src="https://logo.clearbit.com/'+domain+'?size=64" onerror="this.src=\'https://www.google.com/s2/favicons?domain='+domain+'&sz=64\';this.onerror=null" width="'+size+'" height="'+size+'" alt="" loading="lazy">';}
@@ -993,6 +1101,53 @@ function actions(co){
   var nav='https://www.linkedin.com/sales/search/people?query=(filters:List((type:CURRENT_COMPANY_NAME,values:List((value:'+c+',text:'+c+',selectionType:INCLUDED))),(type:SENIORITY_LEVEL,values:List((value:5,text:Director,selectionType:INCLUDED),(value:6,text:VP,selectionType:INCLUDED),(value:7,text:CXO,selectionType:INCLUDED))),(type:FUNCTION,values:List((value:13,text:Information Technology,selectionType:INCLUDED),(value:12,text:Operations,selectionType:INCLUDED)))))';
   var news='https://news.google.com/search?q='+encodeURIComponent(co+' company news')+'&hl=en-US&gl=US&ceid=US:en';
   return '<div class="buyer-btns"><a class="btn-li" href="'+li+'" target="_blank" rel="noopener">🔍 LinkedIn</a><a class="btn-nav" href="'+nav+'" target="_blank" rel="noopener">⭐ Sales Nav</a><a class="btn-news" href="'+news+'" target="_blank" rel="noopener">📰 News</a></div>';
+}
+
+// ── CONTACTS (7/29/26) ──────────────────────────────────────────
+// Small pill dropped next to a company name anywhere in the dashboard when 1+ contacts are on
+// file — Overview Top 10, Rep Drilldown, and Big Movers stay sorted by raw Hot Score (unchanged
+// per the documented Top10-vs-Your5 distinction), so this badge is how those views surface
+// contact coverage without silently reordering them. Your 5 gets the real ranking boost instead
+// (see calcPriority).
+function contactBadge(a){
+  if(!a.contacts||!a.contacts.length)return'';
+  return '<span class="ctag">📇 '+(a.contacts.length>1?a.contacts.length+' Contacts':'Contact on File')+'</span>';
+}
+// Clickable variant for table views (All Accounts) where the contact box isn't already shown
+// inline — toggles a hidden detail row (built by renderAllTable) open/closed. event.stopPropagation
+// keeps a click here from also triggering anything the row itself might do.
+function contactBadgeToggle(a,rowId){
+  if(!a.contacts||!a.contacts.length)return'';
+  return '<span class="ctag ctag-click" onclick="event.stopPropagation();toggleAllContactsRow(\''+rowId+'\')">📇 '+(a.contacts.length>1?a.contacts.length+' Contacts':'Contact on File')+' <span class="ctag-caret" id="caret-'+rowId+'">▾</span></span>';
+}
+function toggleAllContactsRow(id){
+  var row=document.getElementById(id);
+  if(!row)return;
+  var isOpen=row.style.display==='table-row';
+  row.style.display=isOpen?'none':'table-row';
+  var caret=document.getElementById('caret-'+id);
+  if(caret)caret.textContent=isOpen?'▾':'▴';
+}
+// Personalized LinkedIn search for a specific named contact — much more precise than the
+// generic company+title search actions() uses when we don't have a real name.
+function contactLinkedIn(contact){
+  var q=(contact.firstName+' '+contact.lastName+' '+contact.company).trim();
+  return 'https://www.linkedin.com/search/results/people/?keywords='+encodeURIComponent(q);
+}
+function contactRowHtml(contact){
+  var full=(contact.firstName+' '+contact.lastName).trim()||'(name withheld)';
+  var phoneFmt=formatPhone(contact.phone);
+  var phoneHtml=phoneFmt?'<a class="contact-phone" href="tel:'+contact.phone.replace(/\D/g,'')+'">☎ '+phoneFmt+'</a>':'';
+  var priorityTag=contact.topPriority?'<span class="contact-priority-tag">🎯 '+contact.topPriority+'</span>':'';
+  return '<div class="contact-row"><div class="contact-name">'+full+'</div>'+
+    (contact.title?'<div class="contact-title">'+contact.title+'</div>':'')+
+    '<div class="contact-meta">'+phoneHtml+priorityTag+
+    '<a class="contact-li" href="'+contactLinkedIn(contact)+'" target="_blank" rel="noopener">🔍 Find on LinkedIn</a></div></div>';
+}
+function keyContactsHtml(a){
+  if(!a.contacts||!a.contacts.length)return'';
+  return '<div class="contact-box"><div class="contact-box-title">📇 Key Contact'+(a.contacts.length>1?'s':'')+' on File</div>'+
+    a.contacts.map(contactRowHtml).join('')+'</div>';
 }
 
 function showTab(n,btn){document.querySelectorAll('.tab-panel').forEach(function(p){p.classList.remove('active');});document.querySelectorAll('.nav-btn').forEach(function(b){b.classList.remove('active');});document.getElementById('tab-'+n).classList.add('active');if(btn)btn.classList.add('active');window.scrollTo(0,0);}
@@ -1012,7 +1167,7 @@ function renderAll_(){
 
   var tb=document.getElementById('tbody-top10');tb.innerHTML='';
   D.accounts.slice(0,10).forEach(function(a,i){
-    tb.innerHTML+='<tr><td data-label="">'+(i+1)+'</td><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div><div class="co-name">'+a.company+'</div><div class="co-domain">'+a.domain+'</div></div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Rep" style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700;font-size:12px">'+a.rep+'</td><td data-label="Score">'+sp(a.score)+'</td><td data-label="WoW">'+wowHtml(a.wow_pct)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Product Area">'+productAreaHtml(a.product_areas,true)+'</td><td data-label="Pitch">'+pitchHtml(a,false)+'</td><td data-label="IR Intelligence">'+irHtml(a.company,false)+'</td><td data-label="Actions">'+actions(a.company)+'</td></tr>';
+    tb.innerHTML+='<tr><td data-label="">'+(i+1)+'</td><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div><div class="co-name">'+a.company+' '+contactBadge(a)+'</div><div class="co-domain">'+a.domain+'</div></div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Rep" style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700;font-size:12px">'+a.rep+'</td><td data-label="Score">'+sp(a.score)+'</td><td data-label="WoW">'+wowHtml(a.wow_pct)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Product Area">'+productAreaHtml(a.product_areas,true)+'</td><td data-label="Pitch">'+pitchHtml(a,false)+'</td><td data-label="IR Intelligence">'+irHtml(a.company,false)+'</td><td data-label="Actions">'+actions(a.company)+'</td></tr>';
   });
 
   var ft=document.getElementById('five-tabs');ft.innerHTML='';
@@ -1020,7 +1175,7 @@ function renderAll_(){
   var dt=document.getElementById('drill-tabs');dt.innerHTML='';
   Object.keys(D.rep_top10).forEach(function(rep){dt.innerHTML+='<button class="rep-tab" id="dt-'+rep.replace(/ /g,'-')+'" onclick="loadDrill(\''+rep+'\')">'+rep+'</button>';});
 
-  populateFilters();filterAll();renderMovers();
+  populateFilters();filterAll();renderMovers();renderContactsTab();
   var fr=Object.keys(D.top5)[0];if(fr){loadFive(fr);loadDrill(fr);}
 }
 
@@ -1030,7 +1185,7 @@ function loadFive(rep){
   if(btn){btn.style.background=col;btn.style.borderColor='transparent';btn.style.color='#fff';}
   var g=document.getElementById('five-grid');g.innerHTML='';
   (D.top5[rep]||[]).forEach(function(a,i){
-    g.innerHTML+='<div class="five-card"><div class="five-rank">'+(i+1)+'</div><div class="five-co-wrap">'+logo(a.domain,28).replace('co-logo','five-logo')+'<div><div class="five-co">'+a.company+'</div><div class="five-dm">'+a.domain+'</div></div></div><div class="five-signals">'+sp(a.score)+' '+ub(a.urgency)+' '+vtag(a.vertical)+(a.intent_branded>0?'<span style="font-size:11px;color:#009ADE;font-weight:700">Branded: '+a.intent_branded+'</span>':'')+'</div>'+productAreaHtml(a.product_areas,true)+pitchHtml(a,true)+irHtml(a.company,true)+'<div class="five-actions">'+actions(a.company)+'</div>'+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:8px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\""+" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button></div>";
+    g.innerHTML+='<div class="five-card"><div class="five-rank">'+(i+1)+'</div><div class="five-co-wrap">'+logo(a.domain,28).replace('co-logo','five-logo')+'<div><div class="five-co">'+a.company+' '+contactBadge(a)+'</div><div class="five-dm">'+a.domain+'</div></div></div><div class="five-signals">'+sp(a.score)+' '+ub(a.urgency)+' '+vtag(a.vertical)+(a.intent_branded>0?'<span style="font-size:11px;color:#009ADE;font-weight:700">Branded: '+a.intent_branded+'</span>':'')+'</div>'+productAreaHtml(a.product_areas,true)+pitchHtml(a,true)+keyContactsHtml(a)+irHtml(a.company,true)+'<div class="five-actions">'+actions(a.company)+'</div>'+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:8px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\""+" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button></div>";
   });
 }
 function loadDrill(rep){
@@ -1040,7 +1195,7 @@ function loadDrill(rep){
   var el=document.getElementById('drill-content');el.innerHTML='';
   (D.rep_top10[rep]||[]).forEach(function(a,i){
     var uid='dr-'+i+'-'+rep.replace(/ /g,'');
-    el.innerHTML+='<div class="acct-card"><div class="acct-hdr" onclick="toggleAcct(\''+uid+'\')"><div class="acct-rank" style="color:'+col+'">#'+(i+1)+'</div>'+logo(a.domain,28).replace('co-logo','acct-logo')+'<div class="acct-info"><div class="acct-co">'+a.company+'</div><div class="acct-dm">'+a.domain+'</div></div><div class="acct-sigs">'+sp(a.score)+' '+ub(a.urgency)+' '+vtag(a.vertical)+' '+wowHtml(a.wow_pct)+'</div><span class="expand-icon" id="icon-'+uid+'">▶</span></div><div class="acct-body" id="'+uid+'"><div class="sig-grid"><div class="sig-box"><div class="sig-val" style="color:var(--gold)">'+a.score+'</div><div class="sig-label">Hot Score</div></div><div class="sig-box"><div class="sig-val" style="color:'+(a.wow_pct>0?'var(--green)':'var(--red)')+'">'+( a.wow_pct>0?'+':'')+a.wow_pct.toFixed(1)+'%</div><div class="sig-label">WoW</div></div><div class="sig-box"><div class="sig-val" style="color:#97CAEB">'+a.intent_product+'</div><div class="sig-label">Product</div></div><div class="sig-box"><div class="sig-val" style="color:#009ADE">'+a.intent_branded+'</div><div class="sig-label">Branded</div></div><div class="sig-box"><div class="sig-val" style="color:var(--green)">'+a.ai_readiness+'</div><div class="sig-label">AI Ready</div></div><div class="sig-box"><div class="sig-val">'+a.ad_impressions.toLocaleString()+'</div><div class="sig-label">Impr.</div></div></div>'+productAreaHtml(a.product_areas,true)+pitchHtml(a,true)+irHtml(a.company,true)+'<div class="action-label">🎯 Actions</div>'+actions(a.company)+''+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:10px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\""+" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button></div></div>";
+    el.innerHTML+='<div class="acct-card"><div class="acct-hdr" onclick="toggleAcct(\''+uid+'\')"><div class="acct-rank" style="color:'+col+'">#'+(i+1)+'</div>'+logo(a.domain,28).replace('co-logo','acct-logo')+'<div class="acct-info"><div class="acct-co">'+a.company+' '+contactBadge(a)+'</div><div class="acct-dm">'+a.domain+'</div></div><div class="acct-sigs">'+sp(a.score)+' '+ub(a.urgency)+' '+vtag(a.vertical)+' '+wowHtml(a.wow_pct)+'</div><span class="expand-icon" id="icon-'+uid+'">▶</span></div><div class="acct-body" id="'+uid+'"><div class="sig-grid"><div class="sig-box"><div class="sig-val" style="color:var(--gold)">'+a.score+'</div><div class="sig-label">Hot Score</div></div><div class="sig-box"><div class="sig-val" style="color:'+(a.wow_pct>0?'var(--green)':'var(--red)')+'">'+( a.wow_pct>0?'+':'')+a.wow_pct.toFixed(1)+'%</div><div class="sig-label">WoW</div></div><div class="sig-box"><div class="sig-val" style="color:#97CAEB">'+a.intent_product+'</div><div class="sig-label">Product</div></div><div class="sig-box"><div class="sig-val" style="color:#009ADE">'+a.intent_branded+'</div><div class="sig-label">Branded</div></div><div class="sig-box"><div class="sig-val" style="color:var(--green)">'+a.ai_readiness+'</div><div class="sig-label">AI Ready</div></div><div class="sig-box"><div class="sig-val">'+a.ad_impressions.toLocaleString()+'</div><div class="sig-label">Impr.</div></div></div>'+productAreaHtml(a.product_areas,true)+pitchHtml(a,true)+keyContactsHtml(a)+irHtml(a.company,true)+'<div class="action-label">🎯 Actions</div>'+actions(a.company)+''+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:10px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\""+" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button></div></div>";
   });
 }
 function toggleAcct(id){var b=document.getElementById(id),ic=document.getElementById('icon-'+id);if(!b)return;var o=b.classList.toggle('open');if(ic)ic.classList.toggle('open',o);}
@@ -1066,19 +1221,28 @@ function filterAll(){
   var u=document.getElementById('filter-urgency').value;
   var v=document.getElementById('filter-vertical').value;
   var p=document.getElementById('filter-product').value;
+  var hc=document.getElementById('filter-has-contact').checked;
   var sort=document.getElementById('sort-all').value;
   // Per Ellie (7/18/26): filter on shownProductAreas(a.product_areas) rather than the raw
   // product_areas array — this must match exactly what's visible in the Product Area column,
   // otherwise a company could match the filter on a tag that isn't actually shown for it (e.g.
   // a secondary cluster that got capped out of display).
-  allF=D.accounts.filter(function(a){return(!s||a.company.toLowerCase().includes(s))&&(!r||a.rep===r)&&(!u||a.urgency===u)&&(!v||a.vertical===v)&&(!p||shownProductAreas(a.product_areas).indexOf(p)>=0);}).sort(function(a,b){return b[sort]-a[sort];});
+  allF=D.accounts.filter(function(a){return(!s||a.company.toLowerCase().includes(s))&&(!r||a.rep===r)&&(!u||a.urgency===u)&&(!v||a.vertical===v)&&(!p||shownProductAreas(a.product_areas).indexOf(p)>=0)&&(!hc||(a.contacts&&a.contacts.length>0));}).sort(function(a,b){return b[sort]-a[sort];});
   allP=1;renderAllTable();
 }
 function renderAllTable(){
   var tb=document.getElementById('tbody-all');tb.innerHTML='';
   var page=allF.slice((allP-1)*PS,allP*PS);
   if(!page.length){tb.innerHTML='<tr><td colspan="10" class="empty">No results</td></tr>';return;}
-  page.forEach(function(a){tb.innerHTML+='<tr><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div><div class="co-name">'+a.company+'</div><div class="co-domain">'+a.domain+'</div></div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Rep" style="color:'+(RC[a.rep]||'#6b6b99')+';font-size:12px;font-weight:600">'+a.rep+'</td><td data-label="Score">'+sp(a.score)+'</td><td data-label="WoW">'+wowHtml(a.wow_pct)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Product Area">'+productAreaHtml(a.product_areas,true)+'</td><td data-label="Pitch">'+pitchHtml(a,false)+'</td><td data-label="IR Intelligence">'+irHtml(a.company,false)+'</td><td data-label="Actions">'+actions(a.company)+'</td></tr>';});
+  page.forEach(function(a,idx){
+    var hasContacts=a.contacts&&a.contacts.length>0;
+    var rowId='ac-contact-'+allP+'-'+idx;
+    var badge=hasContacts?contactBadgeToggle(a,rowId):'';
+    tb.innerHTML+='<tr><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div><div class="co-name">'+a.company+' '+badge+'</div><div class="co-domain">'+a.domain+'</div></div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Rep" style="color:'+(RC[a.rep]||'#6b6b99')+';font-size:12px;font-weight:600">'+a.rep+'</td><td data-label="Score">'+sp(a.score)+'</td><td data-label="WoW">'+wowHtml(a.wow_pct)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Product Area">'+productAreaHtml(a.product_areas,true)+'</td><td data-label="Pitch">'+pitchHtml(a,false)+'</td><td data-label="IR Intelligence">'+irHtml(a.company,false)+'</td><td data-label="Actions">'+actions(a.company)+'</td></tr>';
+    if(hasContacts){
+      tb.innerHTML+='<tr class="contact-detail-row" id="'+rowId+'" style="display:none"><td colspan="10" data-label="">'+keyContactsHtml(a)+'</td></tr>';
+    }
+  });
   document.getElementById('all-count').textContent=allF.length+' accounts';
   var mc=document.getElementById('all-modal-count');if(mc)mc.textContent=allF.length+' accounts';
   var tot=Math.ceil(allF.length/PS),pg=document.getElementById('pag-all');
@@ -1091,7 +1255,21 @@ function goP(p){allP=p;renderAllTable();window.scrollTo(0,0);}
 
 function renderMovers(){
   var el=document.getElementById('movers-list');el.innerHTML='';
-  D.movers.forEach(function(a){el.innerHTML+='<div class="mover-card"><div style="flex:1"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">'+logo(a.domain,28)+'<span style="font-weight:800;font-size:15px">'+a.company+'</span>'+ub(a.urgency)+vtag(a.vertical)+'</div><div style="font-size:12px;color:var(--muted);margin-bottom:8px">Rep: <span style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700">'+a.rep+'</span> · Score: '+sp(a.score)+'</div>'+productAreaHtml(a.product_areas,true)+pitchHtml(a,true)+irHtml(a.company,true)+actions(a.company)+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:8px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\"" +" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button>"+'</div><div class="mover-pct">▲'+a.wow_pct.toFixed(1)+'%<span>WoW</span></div></div>';});
+  D.movers.forEach(function(a){el.innerHTML+='<div class="mover-card"><div style="flex:1"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">'+logo(a.domain,28)+'<span style="font-weight:800;font-size:15px">'+a.company+'</span>'+contactBadge(a)+ub(a.urgency)+vtag(a.vertical)+'</div><div style="font-size:12px;color:var(--muted);margin-bottom:8px">Rep: <span style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700">'+a.rep+'</span> · Score: '+sp(a.score)+'</div>'+productAreaHtml(a.product_areas,true)+pitchHtml(a,true)+keyContactsHtml(a)+irHtml(a.company,true)+actions(a.company)+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:8px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\"" +" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button>"+'</div><div class="mover-pct">▲'+a.wow_pct.toFixed(1)+'%<span>WoW</span></div></div>';});
+}
+function renderContactsTab(){
+  var hint=document.getElementById('contacts-tab-hint');
+  if(hint)hint.textContent='Accounts with a named contact on file — ranked by Hot Score'+(D.contacts_tab?' · contacts tab: '+D.contacts_tab:'');
+  var el=document.getElementById('contacts-list');el.innerHTML='';
+  if(!D.contacts_ranked||!D.contacts_ranked.length){
+    el.innerHTML='<div class="contacts-empty"><div class="contacts-empty-icon">📇</div>'+
+      (D.contacts_tab?'No accounts in this week\'s data matched a contact from the "'+D.contacts_tab+'" tab yet.':'No contacts sheet found — check that it\'s shared as "Anyone with the link can view" and has a dated tab (e.g. 7.29.2026).')+
+      '</div>';
+    return;
+  }
+  D.contacts_ranked.forEach(function(a){
+    el.innerHTML+='<div class="mover-card"><div style="flex:1"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">'+logo(a.domain,28)+'<span style="font-weight:800;font-size:15px">'+a.company+'</span>'+ub(a.urgency)+vtag(a.vertical)+'</div><div style="font-size:12px;color:var(--muted);margin-bottom:8px">Rep: <span style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700">'+a.rep+'</span> · Score: '+sp(a.score)+' · WoW: '+wowHtml(a.wow_pct)+'</div>'+productAreaHtml(a.product_areas,true)+pitchHtml(a,true)+keyContactsHtml(a)+irHtml(a.company,true)+actions(a.company)+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:8px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\"" +" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button>"+'</div></div>';
+  });
 }
 function renderBranded(){
   document.getElementById('branded-banner').innerHTML='🎯 <strong>'+D.branded.length+' accounts</strong> have measurable branded search intent for "Scale Computing™." These buyers are in research mode — strike fast.';
@@ -1178,14 +1356,15 @@ async function runSamSearch(){
 }
 
 // ── GVIZ FETCH ────────────────────────────────────────────────
-function fetchGvizTab(tabName){
+function fetchGvizTab(tabName,sheetId){
+  sheetId=sheetId||SHEET_ID;
   return new Promise(function(resolve){
     var cb='gviz_'+Date.now()+'_'+Math.random().toString(36).slice(2,8);
     var timer=setTimeout(function(){resolve(null);delete window[cb];},6000);
     window[cb]=function(data){clearTimeout(timer);resolve(data);delete window[cb];if(s.parentNode)s.parentNode.removeChild(s);};
     var s=document.createElement('script');
     s.onerror=function(){clearTimeout(timer);resolve(null);};
-    s.src='https://docs.google.com/spreadsheets/d/'+SHEET_ID+'/gviz/tq?tqx=out:json;responseHandler:'+cb+'&sheet='+encodeURIComponent(tabName);
+    s.src='https://docs.google.com/spreadsheets/d/'+sheetId+'/gviz/tq?tqx=out:json;responseHandler:'+cb+'&sheet='+encodeURIComponent(tabName);
     document.head.appendChild(s);
   });
 }
@@ -1212,6 +1391,27 @@ function buildCandidates(){
   return list;
 }
 
+// Scans a sheet's dated tabs newest-first (in batches of 7 concurrent requests) and returns the
+// most recent tab whose data passes validatorFn, or null if none do. Shared by the Hot Accounts
+// scan and the Contacts scan (7/29/26) so both sheets follow the exact same "most recent dated
+// tab wins" convention without duplicating the loop.
+async function scanForTab(sheetId,validatorFn,statusPrefix){
+  var candidates=buildCandidates();
+  var found=null;
+  for(var i=0;i<candidates.length&&!found;i+=7){
+    var batch=candidates.slice(i,i+7);
+    var tabEl=document.getElementById('loading-tab');
+    if(tabEl)tabEl.textContent=statusPrefix+'… (batch '+(Math.floor(i/7)+1)+')';
+    var results=await Promise.all(batch.map(function(c){
+      return fetchGvizTab(c.tab,sheetId).then(function(data){
+        return validatorFn(data)?{tab:c.tab,data:data,daysAgo:c.daysAgo}:null;
+      });
+    }));
+    var hits=results.filter(Boolean).sort(function(a,b){return a.daysAgo-b.daysAgo;});
+    if(hits.length)found=hits[0];
+  }
+  return found;
+}
 
 // ── SAM Modal ────────────────────────────────────────────────
 function openSamModal(company){
@@ -1339,24 +1539,27 @@ async function init(){
     document.getElementById('err-hint').innerHTML=hint||'';
   }
   try{
-    var candidates=buildCandidates();
-    var found=null;
-    for(var i=0;i<candidates.length&&!found;i+=7){
-      var batch=candidates.slice(i,i+7);
-      document.getElementById('loading-tab').textContent='Scanning recent tabs… (batch '+(Math.floor(i/7)+1)+')';
-      var results=await Promise.all(batch.map(function(c){
-        return fetchGvizTab(c.tab).then(function(data){
-          return isHotAccountData(data)?{tab:c.tab,data:data,daysAgo:c.daysAgo}:null;
-        });
-      }));
-      var hits=results.filter(Boolean).sort(function(a,b){return a.daysAgo-b.daysAgo;});
-      if(hits.length)found=hits[0];
-    }
+    var found=await scanForTab(SHEET_ID,isHotAccountData,'Scanning recent tabs for account data');
     if(!found)throw new Error('No hot accounts data found in the last several weeks. Check that the sheet is shared as "Anyone with the link can view" and that tabs are named M.D.YYYY or MM.DD.YYYY (e.g. 6.16.2026 or 06.16.2026).');
     document.getElementById('loading-tab').textContent='Loading tab "'+found.tab+'"…';
     var raw=parseGvizResponse(found.data);
-    D=processRawData(raw);
-    document.getElementById('footer-meta').textContent='Live data · tab: '+found.tab;
+
+    // Contacts are supplementary, not core — a problem loading them (sheet renamed, unshared,
+    // no recent tab yet, etc.) must never block or error out the main dashboard. Any failure
+    // here just leaves contactsByCompany empty and the Contacts tab shows its empty state.
+    var contactsByCompany={},contactsTab=null;
+    try{
+      document.getElementById('loading-tab').textContent='Checking for contact data…';
+      var contactsFound=await scanForTab(CONTACTS_SHEET_ID,isContactData,'Scanning recent tabs for contacts');
+      if(contactsFound){
+        contactsByCompany=buildContactIndex(parseGvizResponse(contactsFound.data));
+        contactsTab=contactsFound.tab;
+      }
+    }catch(e){contactsByCompany={};contactsTab=null;}
+
+    D=processRawData(raw,contactsByCompany);
+    D.contacts_tab=contactsTab;
+    document.getElementById('footer-meta').textContent='Live data · tab: '+found.tab+(contactsTab?' · contacts: '+contactsTab:' · contacts: none found');
     document.getElementById('loading-screen').style.display='none';
     document.getElementById('main').style.display='block';
     renderAll_();
