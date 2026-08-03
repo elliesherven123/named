@@ -1416,7 +1416,13 @@ function buildCandidates(){
   function add(d){
     var m=d.getMonth()+1,dy=d.getDate(),yr=d.getFullYear();
     var mp=String(m).padStart(2,'0'),dp=String(dy).padStart(2,'0');
-    var variants=[m+'.'+dy+'.'+yr, mp+'.'+dp+'.'+yr, mp+'.'+dy+'.'+yr, m+'.'+dp+'.'+yr];
+    var yr2=String(yr).slice(-2);
+    // Per Ellie (8/3/26): whoever's updating the sheet has been naming recent tabs with a
+    // 2-digit year (e.g. 7.31.26) instead of the original 4-digit convention (7.31.2026) this
+    // was built around — that silently broke every scan, since none of the old variants ever
+    // matched. Trying both year lengths makes this resilient to either convention.
+    var variants=[m+'.'+dy+'.'+yr, mp+'.'+dp+'.'+yr, mp+'.'+dy+'.'+yr, m+'.'+dp+'.'+yr,
+      m+'.'+dy+'.'+yr2, mp+'.'+dp+'.'+yr2, mp+'.'+dy+'.'+yr2, m+'.'+dp+'.'+yr2];
     var daysAgo=Math.round((today-d)/86400000);
     variants.forEach(function(name){if(!seen[name]){seen[name]=1;list.push({tab:name,daysAgo:daysAgo});}});
   }
@@ -1574,7 +1580,7 @@ async function init(){
   }
   try{
     var found=await scanForTab(SHEET_ID,isHotAccountData,'Scanning recent tabs for account data');
-    if(!found)throw new Error('No hot accounts data found in the last several weeks. Check that the sheet is shared as "Anyone with the link can view" and that tabs are named M.D.YYYY or MM.DD.YYYY (e.g. 6.16.2026 or 06.16.2026).');
+    if(!found)throw new Error('No hot accounts data found in the last several weeks. Check that the sheet is shared as "Anyone with the link can view" and that tabs are named M.D.YYYY, MM.DD.YYYY, M.D.YY, or MM.DD.YY (e.g. 6.16.2026 or 6.16.26).');
     document.getElementById('loading-tab').textContent='Loading tab "'+found.tab+'"…';
     var raw=parseGvizResponse(found.data);
 
@@ -1621,7 +1627,7 @@ async function init(){
     document.getElementById('main').style.display='block';
     renderAll_();
   }catch(err){
-    showError('Could not load data',err.message,'Sheet ID: <code>'+SHEET_ID+'</code><br>Tabs must be named M.D.YYYY or MM.DD.YYYY (e.g. <code>6.16.2026</code>) and the sheet must be set to <strong>"Anyone with the link can view."</strong>');
+    showError('Could not load data',err.message,'Sheet ID: <code>'+SHEET_ID+'</code><br>Tabs must be named M.D.YYYY, MM.DD.YYYY, M.D.YY, or MM.DD.YY (e.g. <code>6.16.2026</code> or <code>6.16.26</code>) and the sheet must be set to <strong>"Anyone with the link can view."</strong>');
   }
 }
 
