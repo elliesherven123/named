@@ -286,6 +286,8 @@ tr:hover td{background:rgba(0,154,222,0.03);}
 .contact-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:4px;}
 .contact-phone{font-size:11px;color:var(--gold);text-decoration:none;font-weight:600;}
 .contact-phone:hover{text-decoration:underline;}
+.contact-blocked{color:var(--muted2);cursor:default;}
+.dnc-tag{font-size:9px;font-weight:700;padding:1px 6px;border-radius:10px;background:rgba(255,68,102,0.12);color:var(--red);border:1px solid rgba(255,68,102,0.3);margin-left:4px;}
 .contact-priority-tag{font-size:9px;font-weight:700;padding:1px 7px;border-radius:10px;background:rgba(0,154,222,0.1);color:var(--accent);border:1px solid rgba(0,154,222,0.25);white-space:nowrap;}
 .contact-li{font-size:10px;font-weight:700;color:var(--accent);text-decoration:none;}
 .contact-li:hover{text-decoration:underline;}
@@ -478,10 +480,57 @@ var COL = {
   last_score:"Last Week's Score",
   topic_keywords:'Product Topic Cluster Keywords'
 };
+// Per Ellie (8/3/26): the weekly Contacts tab's real header is "telephone", not "phone" — this
+// was silently dropping every phone number ever since this was built (a header-label mismatch,
+// same species of bug as the Hot Accounts "Company" column). Corrected here; also now capturing
+// email, which wasn't pulled in before.
 var COL_CONTACTS = {
-  firstName:'firstName', lastName:'lastName', phone:'phone', company:'company',
-  title:'title', country:'country', topPriority:'organization_biggest_it_priority'
+  firstName:'firstName', lastName:'lastName', phone:'telephone', company:'company',
+  title:'title', country:'country', email:'email', topPriority:'organization_biggest_it_priority'
 };
+// Per Ellie (8/3/26): a second, always-on contacts source — the "Named Account Leads" tab is a
+// running list (not a dated weekly tab), fetched by exact name rather than scanned for. Its
+// columns use a completely different naming convention than the weekly Contacts tab, so it gets
+// its own map rather than trying to force one schema onto the other.
+var LEADS_TAB_NAME = 'Named Account Leads';
+var COL_LEADS = {
+  firstName:'First Name', lastName:'Last Name', title:'Title', company:'Company / Account',
+  phone:'Phone', country:'Country', email:'Email', leadSource:'Lead Source',
+  doNotCall:'Do Not Call', emailOptOut:'Email Opt Out'
+};
+
+// Per Ellie (8/3/26): rank each account's contacts by seniority so the most senior/decision-
+// maker name shows first, instead of whatever order they happened to land in the sheet. Neither
+// source gives a real seniority field, only free-text Title, so this scores the title text
+// against a rough exec-to-IC hierarchy. Tiers checked top-down, first match wins; a standalone
+// "senior"/"sr" modifier adds a small bump so e.g. "Senior Manager" and "Senior DevOps Manager"
+// both edge out a plain "Manager" without needing an exact adjacent phrase match. Titles with no
+// recognizable keyword (architects, analysts, etc.) fall through to a low individual-contributor
+// default rather than 0, so a real named contact with an unrecognized title still outranks having
+// no contact at all.
+var SENIORITY_TIERS=[
+  // (?<!vice )\bpresident\b — "president" alone means the top job, but "Vice President" also
+  // contains the word "president" and would otherwise false-match this tier before ever reaching
+  // the VP tier below. Excluding it here when directly preceded by "vice " was caught by testing
+  // real titles like "Vice President Information Technology" against this scorer.
+  {score:100,re:/\bchief\b.*\bofficer\b|\bceo\b|\bcfo\b|\bcoo\b|\bcio\b|\bcto\b|\bciso\b|\bcmo\b|\bcro\b|(?<!vice )\bpresident\b|\bchairman\b|\bchairwoman\b|\bowner\b|\bfounder\b/},
+  {score:80,re:/\bexecutive vice president\b|\bevp\b|\bsenior vice president\b|\bsvp\b/},
+  {score:60,re:/\bvice president\b|\bvp\b/},
+  {score:45,re:/\bdirector\b|\bhead of\b/},
+  {score:25,re:/\bmanager\b|\bprincipal\b/},
+  {score:10,re:/\blead\b|\bsupervisor\b/}
+];
+function titleSeniorityScore(title){
+  var t=(title||'').toLowerCase();
+  if(!t)return 0;
+  var base=5;
+  for(var i=0;i<SENIORITY_TIERS.length;i++){if(SENIORITY_TIERS[i].re.test(t)){base=SENIORITY_TIERS[i].score;break;}}
+  if(base<100&&/\bsenior\b|\bsr\.?\b/.test(t))base+=5;
+  return base;
+}
+function sortContactsBySeniority(contacts){
+  return contacts.slice().sort(function(a,b){return titleSeniorityScore(b.title)-titleSeniorityScore(a.title);});
+}
 
 // Normalizes a company name down to a bare matching key — strips legal suffixes, punctuation,
 // and a leading "The" so "Ryder System, Inc." (contacts sheet) and "Ryder System, Inc." or
@@ -1015,7 +1064,7 @@ function processRawData(raw,contactsByCompany){
     var last=Math.round(num(col(row,COL.last_score))*10)/10;
     var topic_kw=String(col(row,COL.topic_keywords)||'').trim();
     var vertical=classifyVertical(company);
-    var contacts=contactsByCompany[normalizeCompanyForMatch(company)]||[];
+    var contacts=sortContactsBySeniority(contactsByCompany[normalizeCompanyForMatch(company)]||[]);
     var urgency=calcUrgency(score,wow_pct,ib,ip,ai);
     var priority=calcPriority(score,wow_pct,ib,ai,ip,contacts.length>0);
     var _acc={company,vertical,intent_product:ip,intent_branded:ib,ai_readiness:ai,score,topic_kw};
@@ -1056,29 +1105,56 @@ function guessDomain(co){return co.toLowerCase().replace(/[^a-z0-9\s]/g,'').repl
 
 // Builds a lookup of normalized-company-key -> array of contact records from a parsed Contacts
 // sheet tab. See normalizeCompanyForMatch() for the matching key logic.
-function buildContactIndex(craw){
+// Shared parser for both contact sources — takes whichever column map matches the sheet
+// (COL_CONTACTS for the weekly tab, COL_LEADS for "Named Account Leads") and a label so merged
+// contacts can be traced back to where they came from if that's ever useful for debugging.
+function buildContactIndexGeneric(craw,colMap,sourceLabel){
   var idx={};
   if(!craw)return idx;
   var headers=craw.headers,rows=craw.rows;
-  function col(row,name){var i=headers.indexOf(name);return i>=0?row[i]:null;}
+  function col(row,name){if(!name)return null;var i=headers.indexOf(name);return i>=0?row[i]:null;}
   rows.forEach(function(row){
-    var company=String(col(row,COL_CONTACTS.company)||'').trim();
+    var company=String(col(row,colMap.company)||'').trim();
     var key=normalizeCompanyForMatch(company);
     if(!key)return;
     var contact={
-      firstName:String(col(row,COL_CONTACTS.firstName)||'').trim(),
-      lastName:String(col(row,COL_CONTACTS.lastName)||'').trim(),
-      phone:String(col(row,COL_CONTACTS.phone)||'').trim(),
-      title:String(col(row,COL_CONTACTS.title)||'').trim(),
+      firstName:String(col(row,colMap.firstName)||'').trim(),
+      lastName:String(col(row,colMap.lastName)||'').trim(),
+      phone:String(col(row,colMap.phone)||'').trim(),
+      title:String(col(row,colMap.title)||'').trim(),
       company:company,
-      country:String(col(row,COL_CONTACTS.country)||'').trim(),
-      topPriority:String(col(row,COL_CONTACTS.topPriority)||'').trim()
+      country:String(col(row,colMap.country)||'').trim(),
+      email:String(col(row,colMap.email)||'').trim(),
+      topPriority:String(col(row,colMap.topPriority)||'').trim(),
+      leadSource:String(col(row,colMap.leadSource)||'').trim(),
+      doNotCall:/^true$/i.test(String(col(row,colMap.doNotCall)||'')),
+      emailOptOut:/^true$/i.test(String(col(row,colMap.emailOptOut)||'')),
+      source:sourceLabel
     };
     if(!contact.firstName&&!contact.lastName)return;
     if(!idx[key])idx[key]=[];
     idx[key].push(contact);
   });
   return idx;
+}
+function buildContactIndex(craw){return buildContactIndexGeneric(craw,COL_CONTACTS,'weekly');}
+function buildLeadsIndex(lraw){return buildContactIndexGeneric(lraw,COL_LEADS,'leads');}
+// Merges a second contact index into the first in place, skipping anything that looks like the
+// same person already on file for that company (matched by email when both have one, otherwise
+// by name+phone) — a contact showing up in both the weekly tab and Named Account Leads shouldn't
+// render twice.
+function mergeContactIndexes(base,extra){
+  Object.keys(extra).forEach(function(key){
+    if(!base[key])base[key]=[];
+    extra[key].forEach(function(c){
+      var dup=base[key].some(function(e){
+        return(e.email&&c.email&&e.email.toLowerCase()===c.email.toLowerCase())||
+          (e.firstName===c.firstName&&e.lastName===c.lastName&&e.phone===c.phone);
+      });
+      if(!dup)base[key].push(c);
+    });
+  });
+  return base;
 }
 // Validates a gviz response actually came from the Contacts sheet (not some other public sheet
 // falling through) before we trust it — mirrors isHotAccountData's approach.
@@ -1087,6 +1163,13 @@ function isContactData(data){
   if(!data.table||!data.table.cols)return false;
   var labels=data.table.cols.map(function(c){return(c.label||c.id||'').toLowerCase();});
   return labels.indexOf('company')>=0&&labels.indexOf('firstname')>=0;
+}
+// Same idea for the Named Account Leads tab — different schema, so different fingerprint.
+function isLeadsData(data){
+  if(!data||data.status==='error')return false;
+  if(!data.table||!data.table.cols)return false;
+  var labels=data.table.cols.map(function(c){return(c.label||c.id||'').toLowerCase();});
+  return labels.indexOf('first name')>=0&&labels.indexOf('company / account')>=0;
 }
 // Formats a raw digit-string phone number (e.g. "8007552728") as (800) 755-2728. Falls back to
 // the raw value unchanged if it isn't a clean 10 or 11-digit US number.
@@ -1148,11 +1231,16 @@ function contactLinkedIn(contact){
 function contactRowHtml(contact){
   var full=(contact.firstName+' '+contact.lastName).trim()||'(name withheld)';
   var phoneFmt=formatPhone(contact.phone);
-  var phoneHtml=phoneFmt?'<a class="contact-phone" href="tel:'+contact.phone.replace(/\D/g,'')+'">☎ '+phoneFmt+'</a>':'';
+  // Per Ellie (8/3/26): Named Account Leads carries real Do Not Call / Email Opt Out flags —
+  // when either is true, show the number/email as plain text instead of a clickable tel:/mailto:
+  // link, so a rep doesn't one-tap contact someone who's opted out.
+  var phoneHtml=phoneFmt?(contact.doNotCall?'<span class="contact-phone contact-blocked">☎ '+phoneFmt+' <span class="dnc-tag">🚫 Do Not Call</span></span>':'<a class="contact-phone" href="tel:'+contact.phone.replace(/\D/g,'')+'">☎ '+phoneFmt+'</a>'):'';
+  var emailHtml=contact.email?(contact.emailOptOut?'<span class="contact-phone contact-blocked">✉ '+contact.email+' <span class="dnc-tag">🚫 Opted Out</span></span>':'<a class="contact-phone" href="mailto:'+contact.email+'">✉ '+contact.email+'</a>'):'';
   var priorityTag=contact.topPriority?'<span class="contact-priority-tag">🎯 '+contact.topPriority+'</span>':'';
+  var leadSourceTag=contact.leadSource?'<span class="contact-priority-tag">📥 '+contact.leadSource+'</span>':'';
   return '<div class="contact-row"><div class="contact-name">'+full+'</div>'+
     (contact.title?'<div class="contact-title">'+contact.title+'</div>':'')+
-    '<div class="contact-meta">'+phoneHtml+priorityTag+
+    '<div class="contact-meta">'+phoneHtml+emailHtml+priorityTag+leadSourceTag+
     '<a class="contact-li" href="'+contactLinkedIn(contact)+'" target="_blank" rel="noopener">🔍 Find on LinkedIn</a></div></div>';
 }
 function keyContactsHtml(a){
@@ -1293,7 +1381,10 @@ function renderContactsTab(){
   var navBtn=document.getElementById('nav-btn-contacts');
   if(navBtn)navBtn.innerHTML='📇 Contacts'+((D.contacts_ranked&&D.contacts_ranked.length)?' <span class="nav-count-badge">'+D.contacts_ranked.length+'</span>':'');
   var hint=document.getElementById('contacts-tab-hint');
-  if(hint)hint.textContent='Accounts with a named contact on file — ranked by Hot Score'+(D.contacts_tab?' · contacts tab: '+D.contacts_tab:'');
+  var sourceBits=[];
+  if(D.contacts_tab)sourceBits.push('contacts tab: '+D.contacts_tab);
+  if(D.leads_loaded)sourceBits.push('Named Account Leads');
+  if(hint)hint.textContent='Accounts with a named contact on file — ranked by Hot Score'+(sourceBits.length?' · '+sourceBits.join(' + '):'');
   var repSel=document.getElementById('filter-contacts-rep');
   var repFilter=repSel?repSel.value:'';
   var el=document.getElementById('contacts-list');el.innerHTML='';
@@ -1301,7 +1392,7 @@ function renderContactsTab(){
   if(!list.length){
     el.innerHTML='<div class="contacts-empty"><div class="contacts-empty-icon">📇</div>'+
       (!D.contacts_ranked||!D.contacts_ranked.length?
-        (D.contacts_tab?'No accounts in this week\'s data matched a contact from the "'+D.contacts_tab+'" tab yet.':'No contacts sheet found — check that it\'s shared as "Anyone with the link can view" and has a dated tab (e.g. 7.29.2026).')
+        (sourceBits.length?'No accounts in this week\'s data matched a contact from '+sourceBits.join(' or ')+' yet.':'No contacts found — check that both the weekly tab and "Named Account Leads" are shared as "Anyone with the link can view."')
         :'No contacts on file for '+repFilter+' yet.')+
       '</div>';
     return;
@@ -1603,6 +1694,20 @@ async function init(){
       }
     }catch(e){contactsByCompany={};contactsTab=null;}
 
+    // Named Account Leads is a second, always-on contacts source — a running list rather than a
+    // dated weekly tab, so it's fetched once by its exact name instead of scanned for. Same
+    // "supplementary, never blocks the dashboard" rule as the weekly Contacts tab above.
+    var leadsLoaded=false;
+    try{
+      document.getElementById('loading-tab').textContent='Checking Named Account Leads…';
+      var leadsData=await fetchGvizTab(LEADS_TAB_NAME,CONTACTS_SHEET_ID);
+      if(isLeadsData(leadsData)){
+        var leadsIdx=buildLeadsIndex(parseGvizResponse(leadsData));
+        contactsByCompany=mergeContactIndexes(contactsByCompany,leadsIdx);
+        leadsLoaded=true;
+      }
+    }catch(e){leadsLoaded=false;}
+
     // "New this week" — diff this week's contact companies against the last tab we'd already
     // processed (stored in localStorage), so the Contacts tab can flag names that weren't there
     // last time instead of making a rep re-scan the whole ranked list to spot what changed.
@@ -1627,8 +1732,9 @@ async function init(){
 
     D=processRawData(raw,contactsByCompany);
     D.contacts_tab=contactsTab;
+    D.leads_loaded=leadsLoaded;
     D.new_contact_keys=newContactKeys;
-    document.getElementById('footer-meta').textContent='Live data · tab: '+found.tab+(contactsTab?' · contacts: '+contactsTab:' · contacts: none found');
+    document.getElementById('footer-meta').textContent='Live data · tab: '+found.tab+(contactsTab?' · contacts: '+contactsTab:' · contacts: none found')+(leadsLoaded?' + Named Account Leads':'');
     document.getElementById('loading-screen').style.display='none';
     document.getElementById('main').style.display='block';
     renderAll_();
