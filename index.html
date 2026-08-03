@@ -991,8 +991,14 @@ function processRawData(raw,contactsByCompany){
   function col(row,name){var i=headers.indexOf(name);return i>=0?row[i]:null;}
   function num(v,fb){var n=parseFloat(v);return isNaN(n)?(fb||0):n;}
   var accounts=[];
+  // Per Ellie (8/3/26): the Company column header text isn't reliable — it's shown up as
+  // literally "z" on at least one live tab (probably a stray edit on the sheet side), which
+  // silently dropped every single row since the label-based lookup below found nothing. Company
+  // has always lived in column A regardless of what its header says, so fall back to index 0
+  // whenever the "Company" label itself can't be found, rather than trusting the header text.
+  var companyColIdx=headers.indexOf(COL.company);
   rows.forEach(function(row){
-    var company=String(col(row,COL.company)||'').trim();
+    var company=String((companyColIdx>=0?row[companyColIdx]:row[0])||'').trim();
     if(!company)return;
     var repRaw=String(col(row,COL.rep)||'').trim();var rep=(!repRaw||/^#?n\/?a$/i.test(repRaw))?'Unassigned':repRaw;
     var domain=String(col(row,COL.domain)||'').trim().toLowerCase().replace(/^www\./,'');
