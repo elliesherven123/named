@@ -279,6 +279,9 @@ tr:hover td{background:rgba(0,154,222,0.03);}
 .nav-count-badge{display:inline-block;background:var(--gold);color:#07111e;font-size:10px;font-weight:800;padding:1px 6px;border-radius:10px;margin-left:2px;vertical-align:middle;}
 .contact-box{background:rgba(210,222,36,0.06);border:1px solid rgba(210,222,36,0.22);border-radius:8px;padding:10px 12px;margin:10px 0 6px;}
 .contact-box-title{font-size:10px;font-weight:800;color:var(--gold);text-transform:uppercase;letter-spacing:0.8px;margin-bottom:8px;}
+.contact-box-toggle{cursor:pointer;margin-bottom:0;display:flex;align-items:center;gap:6px;user-select:none;}
+.contact-box-toggle:hover{color:#e8f060;}
+.contact-box-body{margin-top:8px;}
 .contact-row{display:flex;flex-direction:column;gap:1px;padding:7px 0;border-top:1px solid rgba(210,222,36,0.15);}
 .contact-row:first-of-type{border-top:none;padding-top:0;}
 .contact-name{font-size:13px;font-weight:700;color:var(--text);}
@@ -1248,6 +1251,33 @@ function keyContactsHtml(a){
   return '<div class="contact-box"><div class="contact-box-title">📇 Key Contact'+(a.contacts.length>1?'s':'')+' on File</div>'+
     a.contacts.map(contactRowHtml).join('')+'</div>';
 }
+// Per Ellie (8/3/26): the Contacts tab needed a collapse for accounts with a long contact list
+// (10+ isn't rare once Named Account Leads is merged in) — dumping every name inline made the
+// card unscannable. Below COLLAPSE_THRESHOLD contacts, behaves exactly like keyContactsHtml
+// (no point collapsing 2-3 names). Above it, starts collapsed behind a click-to-expand header
+// so the card stays a fixed, glanceable height regardless of contact count. uid must be unique
+// per card on the page (renderContactsTab uses the row index).
+var CONTACTS_TAB_COLLAPSE_THRESHOLD=5;
+function keyContactsHtmlForTab(a,uid){
+  if(!a.contacts||!a.contacts.length)return'';
+  var total=a.contacts.length;
+  var rows=a.contacts.map(contactRowHtml).join('');
+  if(total<=CONTACTS_TAB_COLLAPSE_THRESHOLD){
+    return '<div class="contact-box"><div class="contact-box-title">📇 Key Contact'+(total>1?'s':'')+' on File</div>'+rows+'</div>';
+  }
+  var boxId='contacts-box-'+uid;
+  return '<div class="contact-box contact-box-collapsible">'+
+    '<div class="contact-box-title contact-box-toggle" onclick="toggleContactsBox(\''+boxId+'\')">📇 '+total+' Key Contacts on File <span class="ctag-caret" id="caret-'+boxId+'">▾</span></div>'+
+    '<div class="contact-box-body" id="'+boxId+'" style="display:none">'+rows+'</div></div>';
+}
+function toggleContactsBox(id){
+  var el=document.getElementById(id);
+  if(!el)return;
+  var isOpen=el.style.display==='block';
+  el.style.display=isOpen?'none':'block';
+  var caret=document.getElementById('caret-'+id);
+  if(caret)caret.textContent=isOpen?'▾':'▴';
+}
 // True if this account's contact(s) weren't in the Contacts sheet as of the last tab we'd
 // already processed — see the localStorage diff in init(). Scoped to the Contacts tab only,
 // per Ellie (7/29/26) — this is a "what's new" signal, not a reason to reorder or badge it
@@ -1397,9 +1427,9 @@ function renderContactsTab(){
       '</div>';
     return;
   }
-  list.forEach(function(a){
+  list.forEach(function(a,idx){
     var newTag=isNewContact(a)?'<span class="new-contact-tag">🆕 New this week</span>':'';
-    el.innerHTML+='<div class="mover-card"><div style="flex:1"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">'+logo(a.domain,28)+'<span style="font-weight:800;font-size:15px">'+a.company+'</span>'+newTag+ub(a.urgency)+vtag(a.vertical)+'</div><div style="font-size:12px;color:var(--muted);margin-bottom:8px">Rep: <span style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700">'+a.rep+'</span> · Score: '+sp(a.score)+' · WoW: '+wowHtml(a.wow_pct)+'</div>'+productAreaHtml(a.product_areas,true)+pitchHtml(a,true)+keyContactsHtml(a)+irHtml(a.company,true)+actions(a.company)+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:8px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\"" +" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button>"+'</div></div>';
+    el.innerHTML+='<div class="mover-card"><div style="flex:1"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">'+logo(a.domain,28)+'<span style="font-weight:800;font-size:15px">'+a.company+'</span>'+newTag+ub(a.urgency)+vtag(a.vertical)+'</div><div style="font-size:12px;color:var(--muted);margin-bottom:8px">Rep: <span style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700">'+a.rep+'</span> · Score: '+sp(a.score)+' · WoW: '+wowHtml(a.wow_pct)+'</div>'+productAreaHtml(a.product_areas,true)+pitchHtml(a,true)+keyContactsHtmlForTab(a,'contacts-tab-'+idx)+irHtml(a.company,true)+actions(a.company)+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:8px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\"" +" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button>"+'</div></div>';
   });
 }
 function renderBranded(){
