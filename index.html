@@ -292,6 +292,7 @@ tr:hover td{background:rgba(0,154,222,0.03);}
 .contact-blocked{color:var(--muted2);cursor:default;}
 .dnc-tag{font-size:9px;font-weight:700;padding:1px 6px;border-radius:10px;background:rgba(255,68,102,0.12);color:var(--red);border:1px solid rgba(255,68,102,0.3);margin-left:4px;}
 .contact-priority-tag{font-size:9px;font-weight:700;padding:1px 7px;border-radius:10px;background:rgba(0,154,222,0.1);color:var(--accent);border:1px solid rgba(0,154,222,0.25);white-space:nowrap;}
+.contact-syndication-tag{font-size:9px;font-weight:700;padding:1px 7px;border-radius:10px;background:rgba(247,141,45,0.12);color:var(--warm);border:1px solid rgba(247,141,45,0.3);white-space:nowrap;}
 .contact-li{font-size:10px;font-weight:700;color:var(--accent);text-decoration:none;}
 .contact-li:hover{text-decoration:underline;}
 .contacts-empty{text-align:center;padding:48px 20px;color:var(--muted);}
@@ -468,7 +469,16 @@ var SHEET_ID = '1AQrVdqo6YQ4sS5l5KbZg9t9W_ZzbIA99yuy5Bd6n5wU';
 // via scanForTab() so it automatically picks up newer tabs as they're added, no code change
 // needed week to week. Currently a single tab ("7.29.26").
 var CONTACTS_SHEET_ID = '1aHJ6oX_nRIz0bShoBBNI0j-5Je46bkLKLJJjVI2Acls';
-var CONTACT_PRIORITY_BOOST = 12; // added to Priority Score (Your 5 ranking) when 1+ contacts are on file — see calcPriority
+// Per Ellie (8/3/26): replaced the old flat +12-for-any-contact boost — with contacts now on
+// file for nearly every account, a flat boost stopped differentiating anything. A contact from
+// the dated/weekly tab (lead syndication — recent content engagement) is a warmer signal than
+// one from the static Named Account Leads list, so it earns a bigger bump. See contactPriorityBoost.
+var CONTACT_PRIORITY_BOOST_SYNDICATION = 18;
+var CONTACT_PRIORITY_BOOST_LEADS = 6;
+function contactPriorityBoost(contacts){
+  if(!contacts||!contacts.length)return 0;
+  return contacts.some(function(c){return c.source==='weekly';})?CONTACT_PRIORITY_BOOST_SYNDICATION:CONTACT_PRIORITY_BOOST_LEADS;
+}
 var SAM_DEFAULT_KEY = 'SAM-df2e71ba-c0b2-4693-815f-8f3d3756f2ac';
 
 var COL = {
@@ -531,8 +541,17 @@ function titleSeniorityScore(title){
   if(base<100&&/\bsenior\b|\bsr\.?\b/.test(t))base+=5;
   return base;
 }
-function sortContactsBySeniority(contacts){
-  return contacts.slice().sort(function(a,b){return titleSeniorityScore(b.title)-titleSeniorityScore(a.title);});
+// Per Ellie (8/3/26): a contact from the dated/weekly tab (lead syndication — someone who
+// recently engaged with our content) is a warmer, more actionable signal than a name pulled
+// from the static Named Account Leads list, regardless of title. Source is checked first; title
+// seniority only breaks ties within the same source group.
+function sortContactsForDisplay(contacts){
+  function sourceRank(c){return c.source==='weekly'?0:1;}
+  return contacts.slice().sort(function(a,b){
+    var sr=sourceRank(a)-sourceRank(b);
+    if(sr!==0)return sr;
+    return titleSeniorityScore(b.title)-titleSeniorityScore(a.title);
+  });
 }
 
 // Normalizes a company name down to a bare matching key — strips legal suffixes, punctuation,
@@ -578,7 +597,7 @@ function calcUrgency(s,w,b,p,a){
 // override a genuinely hot, contact-less account (Score alone is still worth up to 40). Deliberately
 // scoped to Priority Score only (drives Your 5 ranking) — Top 10 / Rep Drilldown stay sorted by
 // raw Hot Score, unchanged, per the existing documented distinction between those views.
-function calcPriority(s,w,b,a,p,hasContact){return Math.round(((s/80)*40+Math.min(w/60,1)*25+(b/90)*20+(a/71)*10+(p/65)*5+(hasContact?CONTACT_PRIORITY_BOOST:0))*10)/10;}
+function calcPriority(s,w,b,a,p,contactBoost){return Math.round(((s/80)*40+Math.min(w/60,1)*25+(b/90)*20+(a/71)*10+(p/65)*5+(contactBoost||0))*10)/10;}
 
 // ── IR CONTEXT LOOKUP ────────────────────────────────────────
 // Public companies: sourced from IR docs, earnings calls, press releases.
@@ -1067,9 +1086,9 @@ function processRawData(raw,contactsByCompany){
     var last=Math.round(num(col(row,COL.last_score))*10)/10;
     var topic_kw=String(col(row,COL.topic_keywords)||'').trim();
     var vertical=classifyVertical(company);
-    var contacts=sortContactsBySeniority(contactsByCompany[normalizeCompanyForMatch(company)]||[]);
+    var contacts=sortContactsForDisplay(contactsByCompany[normalizeCompanyForMatch(company)]||[]);
     var urgency=calcUrgency(score,wow_pct,ib,ip,ai);
-    var priority=calcPriority(score,wow_pct,ib,ai,ip,contacts.length>0);
+    var priority=calcPriority(score,wow_pct,ib,ai,ip,contactPriorityBoost(contacts));
     var _acc={company,vertical,intent_product:ip,intent_branded:ib,ai_readiness:ai,score,topic_kw};
     var product_areas=classifyProductAreas(_acc);
     var _accFull={company,vertical,intent_product:ip,intent_branded:ib,ai_readiness:ai,score,wow_pct,urgency,product_areas,topic_kw};
@@ -1241,9 +1260,14 @@ function contactRowHtml(contact){
   var emailHtml=contact.email?(contact.emailOptOut?'<span class="contact-phone contact-blocked">✉ '+contact.email+' <span class="dnc-tag">🚫 Opted Out</span></span>':'<a class="contact-phone" href="mailto:'+contact.email+'">✉ '+contact.email+'</a>'):'';
   var priorityTag=contact.topPriority?'<span class="contact-priority-tag">🎯 '+contact.topPriority+'</span>':'';
   var leadSourceTag=contact.leadSource?'<span class="contact-priority-tag">📥 '+contact.leadSource+'</span>':'';
+  // Per Ellie (8/3/26): a "weekly"-sourced contact came from the dated tab — lead syndication,
+  // meaning this is someone who recently engaged with our content. That's a meaningfully warmer
+  // signal than a name pulled from the static Named Account Leads list, so call it out visually
+  // rather than leaving source as an invisible internal field.
+  var syndicationTag=contact.source==='weekly'?'<span class="contact-syndication-tag">🔥 Recently Engaged</span>':'';
   return '<div class="contact-row"><div class="contact-name">'+full+'</div>'+
     (contact.title?'<div class="contact-title">'+contact.title+'</div>':'')+
-    '<div class="contact-meta">'+phoneHtml+emailHtml+priorityTag+leadSourceTag+
+    '<div class="contact-meta">'+syndicationTag+phoneHtml+emailHtml+priorityTag+leadSourceTag+
     '<a class="contact-li" href="'+contactLinkedIn(contact)+'" target="_blank" rel="noopener">🔍 Find on LinkedIn</a></div></div>';
 }
 function keyContactsHtml(a){
@@ -1412,7 +1436,7 @@ function renderContactsTab(){
   if(navBtn)navBtn.innerHTML='📇 Contacts'+((D.contacts_ranked&&D.contacts_ranked.length)?' <span class="nav-count-badge">'+D.contacts_ranked.length+'</span>':'');
   var hint=document.getElementById('contacts-tab-hint');
   var sourceBits=[];
-  if(D.contacts_tab)sourceBits.push('contacts tab: '+D.contacts_tab);
+  if(D.contacts_tabs&&D.contacts_tabs.length)sourceBits.push('contacts tabs: '+D.contacts_tabs.join(', '));
   if(D.leads_loaded)sourceBits.push('Named Account Leads');
   if(hint)hint.textContent='Accounts with a named contact on file — ranked by Hot Score'+(sourceBits.length?' · '+sourceBits.join(' + '):'');
   var repSel=document.getElementById('filter-contacts-rep');
@@ -1579,6 +1603,29 @@ async function scanForTab(sheetId,validatorFn,statusPrefix){
   }
   return found;
 }
+// Per Ellie (8/4/26): unlike Hot Accounts — where each week's dated tab is a full refreshed
+// snapshot, so only the newest one matters — the weekly Contacts tabs are each an incremental
+// batch of people who newly engaged that week. A tab named 6.30.26 sitting alongside 7.29.26
+// isn't stale data to discard, it's a separate batch of real people who should still show up.
+// So this checks every candidate in the lookback window (no early exit once one hit is found)
+// and returns ALL valid dated tabs, newest-first, instead of just the single most recent one.
+async function scanAllTabs(sheetId,validatorFn,statusPrefix){
+  var candidates=buildCandidates();
+  var foundTabs=[];
+  for(var i=0;i<candidates.length;i+=7){
+    var batch=candidates.slice(i,i+7);
+    var tabEl=document.getElementById('loading-tab');
+    if(tabEl)tabEl.textContent=statusPrefix+'… (batch '+(Math.floor(i/7)+1)+'/'+Math.ceil(candidates.length/7)+')';
+    var results=await Promise.all(batch.map(function(c){
+      return fetchGvizTab(c.tab,sheetId).then(function(data){
+        return validatorFn(data)?{tab:c.tab,data:data,daysAgo:c.daysAgo}:null;
+      });
+    }));
+    results.filter(Boolean).forEach(function(hit){foundTabs.push(hit);});
+  }
+  foundTabs.sort(function(a,b){return a.daysAgo-b.daysAgo;});
+  return foundTabs;
+}
 
 // ── SAM Modal ────────────────────────────────────────────────
 function openSamModal(company){
@@ -1714,15 +1761,15 @@ async function init(){
     // Contacts are supplementary, not core — a problem loading them (sheet renamed, unshared,
     // no recent tab yet, etc.) must never block or error out the main dashboard. Any failure
     // here just leaves contactsByCompany empty and the Contacts tab shows its empty state.
-    var contactsByCompany={},contactsTab=null;
+    var contactsByCompany={},contactsTabs=[];
     try{
       document.getElementById('loading-tab').textContent='Checking for contact data…';
-      var contactsFound=await scanForTab(CONTACTS_SHEET_ID,isContactData,'Scanning recent tabs for contacts');
-      if(contactsFound){
-        contactsByCompany=buildContactIndex(parseGvizResponse(contactsFound.data));
-        contactsTab=contactsFound.tab;
-      }
-    }catch(e){contactsByCompany={};contactsTab=null;}
+      var contactsFoundAll=await scanAllTabs(CONTACTS_SHEET_ID,isContactData,'Scanning tabs for contacts');
+      contactsFoundAll.forEach(function(hit){
+        contactsByCompany=mergeContactIndexes(contactsByCompany,buildContactIndex(parseGvizResponse(hit.data)));
+        contactsTabs.push(hit.tab);
+      });
+    }catch(e){contactsByCompany={};contactsTabs=[];}
 
     // Named Account Leads is a second, always-on contacts source — a running list rather than a
     // dated weekly tab, so it's fetched once by its exact name instead of scanned for. Same
@@ -1743,17 +1790,22 @@ async function init(){
     // last time instead of making a rep re-scan the whole ranked list to spot what changed.
     // First run ever (no lastTab on file) intentionally flags nothing — everything looking
     // "new" on day one would just be noise. If localStorage is unavailable, this just no-ops.
+    // Keyed on the most recent dated tab found (contactsTabs[0]) — that's the one that actually
+    // advances week to week. An older backfilled tab (e.g. 6.30.26 added alongside 7.29.26)
+    // doesn't retrigger "new this week" on its own; it just contributes its people to the merged
+    // set once, the same as it would if it had always been there.
     var newContactKeys=[];
     try{
-      if(contactsTab){
+      var latestContactsTab=contactsTabs[0]||null;
+      if(latestContactsTab){
         var curContactKeys=Object.keys(contactsByCompany);
         var lastContactsTab=localStorage.getItem('sc_contacts_last_tab');
-        if(lastContactsTab===contactsTab){
+        if(lastContactsTab===latestContactsTab){
           newContactKeys=JSON.parse(localStorage.getItem('sc_contacts_new_keys')||'[]');
         }else{
           var prevContactKeys=JSON.parse(localStorage.getItem('sc_contacts_seen_keys')||'[]');
           newContactKeys=lastContactsTab?curContactKeys.filter(function(k){return prevContactKeys.indexOf(k)===-1;}):[];
-          localStorage.setItem('sc_contacts_last_tab',contactsTab);
+          localStorage.setItem('sc_contacts_last_tab',latestContactsTab);
           localStorage.setItem('sc_contacts_seen_keys',JSON.stringify(curContactKeys));
           localStorage.setItem('sc_contacts_new_keys',JSON.stringify(newContactKeys));
         }
@@ -1761,10 +1813,10 @@ async function init(){
     }catch(e){newContactKeys=[];}
 
     D=processRawData(raw,contactsByCompany);
-    D.contacts_tab=contactsTab;
+    D.contacts_tabs=contactsTabs;
     D.leads_loaded=leadsLoaded;
     D.new_contact_keys=newContactKeys;
-    document.getElementById('footer-meta').textContent='Live data · tab: '+found.tab+(contactsTab?' · contacts: '+contactsTab:' · contacts: none found')+(leadsLoaded?' + Named Account Leads':'');
+    document.getElementById('footer-meta').textContent='Live data · tab: '+found.tab+(contactsTabs.length?' · contacts: '+contactsTabs.join(', '):' · contacts: none found')+(leadsLoaded?' + Named Account Leads':'');
     document.getElementById('loading-screen').style.display='none';
     document.getElementById('main').style.display='block';
     renderAll_();
