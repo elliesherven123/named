@@ -1609,20 +1609,48 @@ async function scanForTab(sheetId,validatorFn,statusPrefix){
 // isn't stale data to discard, it's a separate batch of real people who should still show up.
 // So this checks every candidate in the lookback window (no early exit once one hit is found)
 // and returns ALL valid dated tabs, newest-first, instead of just the single most recent one.
+// Google's gviz endpoint silently serves the sheet's default tab for any sheet= name that
+// doesn't match a real tab, instead of erroring — confirmed in production, where this made
+// nearly every one of the ~150 generated date-guess candidates "validate" as contact data, all
+// silently pointing at the same underlying default tab (a wall of near-duplicate dates in the
+// footer, e.g. "8.4.2026, 08.04.2026, 8.4.26…"). Fingerprinting each hit's actual returned
+// content — not the candidate string used to fetch it — and keeping only one hit per distinct
+// fingerprint collapses that noise back down to the genuinely different tabs it came from.
+function tabContentFingerprint(data){
+  try{
+    var rows=(data&&data.table&&data.table.rows)||[];
+    var first=rows[0]?JSON.stringify(rows[0].c):'';
+    var last=rows[rows.length-1]?JSON.stringify(rows[rows.length-1].c):'';
+    return rows.length+'|'+first+'|'+last;
+  }catch(e){return 'fp-error-'+Math.random();}
+}
+// Per Ellie (8/4/26): batch size bumped from 7 to 25 — since this scan can't stop early (it has
+// to check every candidate to find every genuinely distinct dated tab), the batch size is what
+// controls how many sequential network round-trips it takes. 7-at-a-time over ~150 candidates
+// was ~22 round-trips and was the main driver of a "wicked slow" load complaint; 25-at-a-time
+// cuts that to ~6. These are all lightweight parallel GETs to the same Google Sheets endpoint, so
+// this is safe to push further if it's ever still too slow.
+var CONTACTS_SCAN_BATCH_SIZE=25;
 async function scanAllTabs(sheetId,validatorFn,statusPrefix){
   var candidates=buildCandidates();
-  var foundTabs=[];
-  for(var i=0;i<candidates.length;i+=7){
-    var batch=candidates.slice(i,i+7);
+  var rawHits=[];
+  for(var i=0;i<candidates.length;i+=CONTACTS_SCAN_BATCH_SIZE){
+    var batch=candidates.slice(i,i+CONTACTS_SCAN_BATCH_SIZE);
     var tabEl=document.getElementById('loading-tab');
-    if(tabEl)tabEl.textContent=statusPrefix+'… (batch '+(Math.floor(i/7)+1)+'/'+Math.ceil(candidates.length/7)+')';
+    if(tabEl)tabEl.textContent=statusPrefix+'… (batch '+(Math.floor(i/CONTACTS_SCAN_BATCH_SIZE)+1)+'/'+Math.ceil(candidates.length/CONTACTS_SCAN_BATCH_SIZE)+')';
     var results=await Promise.all(batch.map(function(c){
       return fetchGvizTab(c.tab,sheetId).then(function(data){
         return validatorFn(data)?{tab:c.tab,data:data,daysAgo:c.daysAgo}:null;
       });
     }));
-    results.filter(Boolean).forEach(function(hit){foundTabs.push(hit);});
+    results.filter(Boolean).forEach(function(hit){rawHits.push(hit);});
   }
+  var groups={};
+  rawHits.forEach(function(hit){
+    var fp=tabContentFingerprint(hit.data);
+    if(!groups[fp]||hit.daysAgo<groups[fp].daysAgo)groups[fp]=hit;
+  });
+  var foundTabs=Object.keys(groups).map(function(fp){return groups[fp];});
   foundTabs.sort(function(a,b){return a.daysAgo-b.daysAgo;});
   return foundTabs;
 }
@@ -1753,7 +1781,18 @@ async function init(){
     document.getElementById('err-hint').innerHTML=hint||'';
   }
   try{
-    var found=await scanForTab(SHEET_ID,isHotAccountData,'Scanning recent tabs for account data');
+    // Per Ellie (8/4/26): these three sources used to be awaited one after another — Hot
+    // Accounts, then the Contacts scan, then Leads — which meant the exhaustive Contacts scan
+    // (can't stop early, has to check every candidate) was fully blocking everything behind it.
+    // Kicking off all three requests here, before awaiting any of them, lets them run
+    // concurrently instead of stacked in a queue. This was the main fix for a "wicked slow" load
+    // complaint after the multi-tab Contacts accumulation was added.
+    document.getElementById('loading-tab').textContent='Loading dashboard data…';
+    var hotAccountsPromise=scanForTab(SHEET_ID,isHotAccountData,'Scanning recent tabs for account data');
+    var contactsScanPromise=scanAllTabs(CONTACTS_SHEET_ID,isContactData,'Scanning tabs for contacts').catch(function(){return [];});
+    var leadsPromise=fetchGvizTab(LEADS_TAB_NAME,CONTACTS_SHEET_ID).catch(function(){return null;});
+
+    var found=await hotAccountsPromise;
     if(!found)throw new Error('No hot accounts data found in the last several weeks. Check that the sheet is shared as "Anyone with the link can view" and that tabs are named M.D.YYYY, MM.DD.YYYY, M.D.YY, or MM.DD.YY (e.g. 6.16.2026 or 6.16.26).');
     document.getElementById('loading-tab').textContent='Loading tab "'+found.tab+'"…';
     var raw=parseGvizResponse(found.data);
@@ -1763,8 +1802,7 @@ async function init(){
     // here just leaves contactsByCompany empty and the Contacts tab shows its empty state.
     var contactsByCompany={},contactsTabs=[];
     try{
-      document.getElementById('loading-tab').textContent='Checking for contact data…';
-      var contactsFoundAll=await scanAllTabs(CONTACTS_SHEET_ID,isContactData,'Scanning tabs for contacts');
+      var contactsFoundAll=await contactsScanPromise;
       contactsFoundAll.forEach(function(hit){
         contactsByCompany=mergeContactIndexes(contactsByCompany,buildContactIndex(parseGvizResponse(hit.data)));
         contactsTabs.push(hit.tab);
@@ -1776,8 +1814,7 @@ async function init(){
     // "supplementary, never blocks the dashboard" rule as the weekly Contacts tab above.
     var leadsLoaded=false;
     try{
-      document.getElementById('loading-tab').textContent='Checking Named Account Leads…';
-      var leadsData=await fetchGvizTab(LEADS_TAB_NAME,CONTACTS_SHEET_ID);
+      var leadsData=await leadsPromise;
       if(isLeadsData(leadsData)){
         var leadsIdx=buildLeadsIndex(parseGvizResponse(leadsData));
         contactsByCompany=mergeContactIndexes(contactsByCompany,leadsIdx);
@@ -1816,7 +1853,11 @@ async function init(){
     D.contacts_tabs=contactsTabs;
     D.leads_loaded=leadsLoaded;
     D.new_contact_keys=newContactKeys;
-    document.getElementById('footer-meta').textContent='Live data · tab: '+found.tab+(contactsTabs.length?' · contacts: '+contactsTabs.join(', '):' · contacts: none found')+(leadsLoaded?' + Named Account Leads':'');
+    // Per Ellie (8/4/26): footer shows only the single most recent contacts tab, not the full
+    // list — with multiple dated tabs now merged, joining all of them made this unreadable.
+    // Full coverage (every tab actually contributing contacts) still shows in the Contacts tab's
+    // own hint text, where there's room for it.
+    document.getElementById('footer-meta').textContent='Live data · tab: '+found.tab+(contactsTabs.length?' · contacts: '+contactsTabs[0]+(contactsTabs.length>1?' (+'+(contactsTabs.length-1)+' more)':''):' · contacts: none found')+(leadsLoaded?' + Named Account Leads':'');
     document.getElementById('loading-screen').style.display='none';
     document.getElementById('main').style.display='block';
     renderAll_();
