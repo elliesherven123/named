@@ -443,15 +443,62 @@ tr:hover td{background:rgba(0,154,222,0.03);}
 // CONFIG
 // ═══════════════════════════════════════════════════════════════
 var SHEET_ID = '1AQrVdqo6YQ4sS5l5KbZg9t9W_ZzbIA99yuy5Bd6n5wU';
-// Per Ellie (7/29/26): separate Google Sheet of syndicated contacts (name/title/phone per
-// company). Same weekly-dated-tab convention as the Hot Accounts sheet — scanned the same way
-// via scanForTab() so it automatically picks up newer tabs as they're added, no code change
-// needed week to week. Currently a single tab ("7.29.26").
-var CONTACTS_SHEET_ID = '1aHJ6oX_nRIz0bShoBBNI0j-5Je46bkLKLJJjVI2Acls';
+// Per Ellie (8/17/26): replaced the old two-source contacts model (a dated-tab-scanned
+// "syndication" sheet + a separate static "Named Account Leads" tab) with this single sheet —
+// it's a superset of the old Named Account Leads list, now with real Last Activity / Last
+// Modified dates on every row, so recency can be computed directly instead of inferred from
+// which tab/sheet a contact happened to come from. Fetched by exact tab name, not scanned for,
+// same as the old Named Account Leads fetch — this sheet has only the one tab.
+var NAC_SHEET_ID = '1k7jm5zqmfQpW3DyUCzUCWjrZjYbVi5gV';
+var NAC_TAB_NAME = 'Named Account Co-Pilot';
+// Per Ellie (8/17/26): how recent a contact's Last Activity (or Last Modified, when Last
+// Activity is blank — true for roughly half the rows) has to be to count as "recently engaged."
+// Chosen from real distribution data pulled 8/17/26: 30d ≈ 1,185 contacts (2.4% of 49,319),
+// 60d ≈ 2,188 (4.4%), 90d ≈ 2,651 (5.4%), 180d ≈ 16,323 (33.1%, ruled out as too loose to mean
+// anything). Ellie chose 60 days.
+var RECENTLY_ENGAGED_WINDOW_DAYS = 60;
+// Per Ellie (8/17/26): the Named Account Co-Pilot sheet (49,319 rows, ~15MB once indexed) can't
+// be filtered server-side — confirmed directly against the live sheet that Last Activity/Last
+// Modified are stored as text, not real dates, so a gviz date-range query silently returns zero
+// rows instead of erroring. Since reformatting those columns is off the table, the fix is to stop
+// re-fetching this sheet on every load: it's fetched fresh once per week (any load on/after the
+// most recent Friday) and reused for every load until the next Friday, or until someone clicks
+// the footer's refresh link (which always forces a full re-fetch, see refreshDashboard).
+var NAC_WEEKLY_CACHE_KEY='sc_nac_weekly_cache_v1';
+// Midnight (local time) of the most recent Friday on/before `now` — if `now` IS a Friday, that's
+// today at midnight, so the first load each Friday always forces a fresh fetch (and later loads
+// that same Friday reuse it, rather than re-fetching 49k rows on every single Friday page view).
+function mostRecentFridayMidnight(now){
+  var d=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  var daysSinceFriday=(d.getDay()-5+7)%7; // getDay(): 0=Sun...5=Fri...6=Sat
+  d.setDate(d.getDate()-daysSinceFriday);
+  return d;
+}
+function nacWeeklyCacheIsFresh(savedAt){
+  if(!savedAt)return false;
+  return savedAt>=mostRecentFridayMidnight(new Date()).getTime();
+}
+// Pulls the set of normalized company keys this week's Hot Accounts data actually tracks, using
+// the same normalizeCompanyForMatch() key used everywhere else contacts get matched. Used to trim
+// the cached contacts index down to only companies this dashboard will ever look up — see the
+// size note where this is called from in init().
+function extractNamedAccountKeys(raw){
+  var iCompany=raw.headers.indexOf(COL.company);
+  if(iCompany<0)return[];
+  var seen={};
+  raw.rows.forEach(function(row){
+    var key=normalizeCompanyForMatch(row[iCompany]);
+    if(key)seen[key]=true;
+  });
+  return Object.keys(seen);
+}
 // Per Ellie (8/3/26): replaced the old flat +12-for-any-contact boost — with contacts now on
-// file for nearly every account, a flat boost stopped differentiating anything. A contact from
-// the dated/weekly tab (lead syndication — recent content engagement) is a warmer signal than
-// one from the static Named Account Leads list, so it earns a bigger bump. See contactPriorityBoost.
+// file for nearly every account, a flat boost stopped differentiating anything. A recently-
+// engaged contact (see RECENTLY_ENGAGED_WINDOW_DAYS) is a warmer signal than a contact with no
+// recent activity on file, so it earns a bigger bump. See contactPriorityBoost. contact.source
+// stays 'weekly'/'leads' internally (unchanged label from the old tab-based source split) even
+// though it's now assigned by recency rather than by which tab/sheet a contact came from — kept
+// as-is so the boost, sort, and tag logic below didn't all need touching for this swap.
 var CONTACT_PRIORITY_BOOST_SYNDICATION = 18;
 var CONTACT_PRIORITY_BOOST_LEADS = 6;
 function contactPriorityBoost(contacts){
@@ -459,6 +506,18 @@ function contactPriorityBoost(contacts){
   return contacts.some(function(c){return c.source==='weekly';})?CONTACT_PRIORITY_BOOST_SYNDICATION:CONTACT_PRIORITY_BOOST_LEADS;
 }
 var SAM_DEFAULT_KEY = 'SAM-df2e71ba-c0b2-4693-815f-8f3d3756f2ac';
+// Per Ellie (8/13/26): the Hot Accounts scan guesses candidate tab names (~172 speculative gviz
+// requests) since that sheet doesn't expose its real tab list without extra setup. This caches
+// the fully-processed dashboard object (D) in localStorage for a short window so repeat loads
+// within that window skip the entire fetch+process pipeline and render instantly. The first load
+// of the day (or any load after the cache expires) still pays the full cost. (As of 8/17/26 this
+// helps even more than before — the Contacts side no longer guesses/scans at all, see NAC_SHEET_ID
+// above — so the cache now mainly covers the Hot Accounts guessing.)
+// Bumped to v2 on 8/17/26 (Named Account Co-Pilot swap changed D's shape — this forces any old
+// cached entry from before the swap to be treated as a miss instead of rendering with stale
+// fields like the removed contacts_tabs/leads_loaded).
+var DASH_CACHE_KEY='sc_dashboard_cache_v2';
+var DASH_CACHE_TTL_MS=10*60*1000; // 10 minutes
 
 var COL = {
   company:'Company', rep:'Enterprise Rep', domain:'Domain',
@@ -472,23 +531,15 @@ var COL = {
   last_score:"Last Week's Score",
   topic_keywords:'Product Topic Cluster Keywords'
 };
-// Per Ellie (8/3/26): the weekly Contacts tab's real header is "telephone", not "phone" — this
-// was silently dropping every phone number ever since this was built (a header-label mismatch,
-// same species of bug as the Hot Accounts "Company" column). Corrected here; also now capturing
-// email, which wasn't pulled in before.
-var COL_CONTACTS = {
-  firstName:'firstName', lastName:'lastName', phone:'telephone', company:'company',
-  title:'title', country:'country', email:'email', topPriority:'organization_biggest_it_priority'
-};
-// Per Ellie (8/3/26): a second, always-on contacts source — the "Named Account Leads" tab is a
-// running list (not a dated weekly tab), fetched by exact name rather than scanned for. Its
-// columns use a completely different naming convention than the weekly Contacts tab, so it gets
-// its own map rather than trying to force one schema onto the other.
-var LEADS_TAB_NAME = 'Named Account Leads';
-var COL_LEADS = {
+// Per Ellie (8/17/26): the Named Account Co-Pilot sheet's real headers, confirmed directly
+// against the live sheet (it originally had no header row at all — Ellie added one). Do Not Call
+// and Email Opt Out are spelled out exactly, no more guessing on those two like the headerless
+// version would have required. lastActivity/lastModified feed the recency check below.
+var COL_NAC = {
   firstName:'First Name', lastName:'Last Name', title:'Title', company:'Company / Account',
   phone:'Phone', country:'Country', email:'Email', leadSource:'Lead Source',
-  doNotCall:'Do Not Call', emailOptOut:'Email Opt Out'
+  doNotCall:'Do Not Call', emailOptOut:'Email Opt Out',
+  lastActivity:'Last Activity', lastModified:'Last Modified'
 };
 
 // Per Ellie (8/3/26): rank each account's contacts by seniority so the most senior/decision-
@@ -1104,33 +1155,58 @@ function processRawData(raw,contactsByCompany){
 
 function guessDomain(co){return co.toLowerCase().replace(/[^a-z0-9\s]/g,'').replace(/\b(the|inc|llc|ltd|co|corp|company|group|holdings|international|services|solutions|systems|technologies|technology|enterprises|global)\b/g,'').trim().split(/\s+/)[0]+'.com';}
 
-// Builds a lookup of normalized-company-key -> array of contact records from a parsed Contacts
-// sheet tab. See normalizeCompanyForMatch() for the matching key logic.
-// Shared parser for both contact sources — takes whichever column map matches the sheet
-// (COL_CONTACTS for the weekly tab, COL_LEADS for "Named Account Leads") and a label so merged
-// contacts can be traced back to where they came from if that's ever useful for debugging.
-function buildContactIndexGeneric(craw,colMap,sourceLabel){
+// Per Ellie (8/17/26): gviz represents a real Date-typed cell as a literal string like
+// "Date(2026,7,17)" (month is 0-indexed in that format, unlike the M/D/YYYY text it also has to
+// handle as a fallback in case a date column is ever formatted as plain text instead). Returns a
+// real JS Date, or null if the value is blank/unparseable — callers treat null as "no date on
+// file for this contact" rather than throwing.
+function parseGvizDateValue(v){
+  if(v===null||v===undefined||v==='')return null;
+  if(v instanceof Date)return isNaN(v.getTime())?null:v;
+  var s=String(v).trim();
+  var m=s.match(/^Date\((\d+),(\d+),(\d+)/);
+  if(m)return new Date(parseInt(m[1],10),parseInt(m[2],10),parseInt(m[3],10));
+  var m2=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if(m2)return new Date(parseInt(m2[3],10),parseInt(m2[1],10)-1,parseInt(m2[2],10));
+  var d=new Date(s);
+  return isNaN(d.getTime())?null:d;
+}
+// Builds a lookup of normalized-company-key -> array of contact records from the Named Account
+// Co-Pilot sheet. See normalizeCompanyForMatch() for the matching key logic.
+// Per Ellie (8/17/26): this replaced the old two-source model (a dated-tab-scanned sheet merged
+// with a separate static "Named Account Leads" tab) with this one sheet, which now carries real
+// Last Activity / Last Modified dates. contact.source is assigned 'weekly' when the contact's
+// most recent of those two dates falls within RECENTLY_ENGAGED_WINDOW_DAYS, 'leads' otherwise —
+// same two labels the old tab-origin split used, so contactPriorityBoost, sortContactsForDisplay,
+// and the "🔥 Recently Engaged" tag in contactRowHtml all keep working unchanged. nowMs is passed
+// in (rather than read via Date.now() in here) so this stays testable/deterministic.
+function buildNacContactIndex(craw,nowMs){
   var idx={};
   if(!craw)return idx;
   var headers=craw.headers,rows=craw.rows;
   function col(row,name){if(!name)return null;var i=headers.indexOf(name);return i>=0?row[i]:null;}
   rows.forEach(function(row){
-    var company=String(col(row,colMap.company)||'').trim();
+    var company=String(col(row,COL_NAC.company)||'').trim();
     var key=normalizeCompanyForMatch(company);
     if(!key)return;
+    // Last Activity is blank for roughly half of all rows (confirmed 8/17/26) — Last Modified is
+    // populated almost universally, so it's the fallback rather than a second independent check.
+    var engagementDate=parseGvizDateValue(col(row,COL_NAC.lastActivity))||parseGvizDateValue(col(row,COL_NAC.lastModified));
+    var daysAgo=engagementDate?Math.round((nowMs-engagementDate.getTime())/86400000):null;
+    var recentlyEngaged=daysAgo!==null&&daysAgo>=0&&daysAgo<=RECENTLY_ENGAGED_WINDOW_DAYS;
     var contact={
-      firstName:String(col(row,colMap.firstName)||'').trim(),
-      lastName:String(col(row,colMap.lastName)||'').trim(),
-      phone:String(col(row,colMap.phone)||'').trim(),
-      title:String(col(row,colMap.title)||'').trim(),
+      firstName:String(col(row,COL_NAC.firstName)||'').trim(),
+      lastName:String(col(row,COL_NAC.lastName)||'').trim(),
+      phone:String(col(row,COL_NAC.phone)||'').trim(),
+      title:String(col(row,COL_NAC.title)||'').trim(),
       company:company,
-      country:String(col(row,colMap.country)||'').trim(),
-      email:String(col(row,colMap.email)||'').trim(),
-      topPriority:String(col(row,colMap.topPriority)||'').trim(),
-      leadSource:String(col(row,colMap.leadSource)||'').trim(),
-      doNotCall:/^true$/i.test(String(col(row,colMap.doNotCall)||'')),
-      emailOptOut:/^true$/i.test(String(col(row,colMap.emailOptOut)||'')),
-      source:sourceLabel
+      country:String(col(row,COL_NAC.country)||'').trim(),
+      email:String(col(row,COL_NAC.email)||'').trim(),
+      leadSource:String(col(row,COL_NAC.leadSource)||'').trim(),
+      doNotCall:/^true$/i.test(String(col(row,COL_NAC.doNotCall)||'')),
+      emailOptOut:/^true$/i.test(String(col(row,COL_NAC.emailOptOut)||'')),
+      engagementDaysAgo:daysAgo,
+      source:recentlyEngaged?'weekly':'leads'
     };
     if(!contact.firstName&&!contact.lastName)return;
     if(!idx[key])idx[key]=[];
@@ -1138,39 +1214,13 @@ function buildContactIndexGeneric(craw,colMap,sourceLabel){
   });
   return idx;
 }
-function buildContactIndex(craw){return buildContactIndexGeneric(craw,COL_CONTACTS,'weekly');}
-function buildLeadsIndex(lraw){return buildContactIndexGeneric(lraw,COL_LEADS,'leads');}
-// Merges a second contact index into the first in place, skipping anything that looks like the
-// same person already on file for that company (matched by email when both have one, otherwise
-// by name+phone) — a contact showing up in both the weekly tab and Named Account Leads shouldn't
-// render twice.
-function mergeContactIndexes(base,extra){
-  Object.keys(extra).forEach(function(key){
-    if(!base[key])base[key]=[];
-    extra[key].forEach(function(c){
-      var dup=base[key].some(function(e){
-        return(e.email&&c.email&&e.email.toLowerCase()===c.email.toLowerCase())||
-          (e.firstName===c.firstName&&e.lastName===c.lastName&&e.phone===c.phone);
-      });
-      if(!dup)base[key].push(c);
-    });
-  });
-  return base;
-}
-// Validates a gviz response actually came from the Contacts sheet (not some other public sheet
-// falling through) before we trust it — mirrors isHotAccountData's approach.
-function isContactData(data){
+// Validates a gviz response actually came from the Named Account Co-Pilot sheet (not some other
+// public sheet falling through) before we trust it — mirrors isHotAccountData's approach.
+function isNacData(data){
   if(!data||data.status==='error')return false;
   if(!data.table||!data.table.cols)return false;
   var labels=data.table.cols.map(function(c){return(c.label||c.id||'').toLowerCase();});
-  return labels.indexOf('company')>=0&&labels.indexOf('firstname')>=0;
-}
-// Same idea for the Named Account Leads tab — different schema, so different fingerprint.
-function isLeadsData(data){
-  if(!data||data.status==='error')return false;
-  if(!data.table||!data.table.cols)return false;
-  var labels=data.table.cols.map(function(c){return(c.label||c.id||'').toLowerCase();});
-  return labels.indexOf('first name')>=0&&labels.indexOf('company / account')>=0;
+  return labels.indexOf('first name')>=0&&labels.indexOf('company / account')>=0&&labels.indexOf('last activity')>=0;
 }
 // Formats a raw digit-string phone number (e.g. "8007552728") as (800) 755-2728. Falls back to
 // the raw value unchanged if it isn't a clean 10 or 11-digit US number.
@@ -1237,16 +1287,15 @@ function contactRowHtml(contact){
   // link, so a rep doesn't one-tap contact someone who's opted out.
   var phoneHtml=phoneFmt?(contact.doNotCall?'<span class="contact-phone contact-blocked">☎ '+phoneFmt+' <span class="dnc-tag">🚫 Do Not Call</span></span>':'<a class="contact-phone" href="tel:'+contact.phone.replace(/\D/g,'')+'">☎ '+phoneFmt+'</a>'):'';
   var emailHtml=contact.email?(contact.emailOptOut?'<span class="contact-phone contact-blocked">✉ '+contact.email+' <span class="dnc-tag">🚫 Opted Out</span></span>':'<a class="contact-phone" href="mailto:'+contact.email+'">✉ '+contact.email+'</a>'):'';
-  var priorityTag=contact.topPriority?'<span class="contact-priority-tag">🎯 '+contact.topPriority+'</span>':'';
   var leadSourceTag=contact.leadSource?'<span class="contact-priority-tag">📥 '+contact.leadSource+'</span>':'';
-  // Per Ellie (8/3/26): a "weekly"-sourced contact came from the dated tab — lead syndication,
-  // meaning this is someone who recently engaged with our content. That's a meaningfully warmer
-  // signal than a name pulled from the static Named Account Leads list, so call it out visually
-  // rather than leaving source as an invisible internal field.
+  // Per Ellie (8/17/26): contact.source is now assigned by recency (Last Activity/Last Modified
+  // within RECENTLY_ENGAGED_WINDOW_DAYS) rather than by which tab a contact came from, but the
+  // 'weekly' label and this tag are unchanged — it's still calling out "this is a warmer, more
+  // actionable signal than the rest of the list," just computed a different way now.
   var syndicationTag=contact.source==='weekly'?'<span class="contact-syndication-tag">🔥 Recently Engaged</span>':'';
   return '<div class="contact-row"><div class="contact-name">'+full+'</div>'+
     (contact.title?'<div class="contact-title">'+contact.title+'</div>':'')+
-    '<div class="contact-meta">'+syndicationTag+phoneHtml+emailHtml+priorityTag+leadSourceTag+
+    '<div class="contact-meta">'+syndicationTag+phoneHtml+emailHtml+leadSourceTag+
     '<a class="contact-li" href="'+contactLinkedIn(contact)+'" target="_blank" rel="noopener">🔍 Find on LinkedIn</a></div></div>';
 }
 function keyContactsHtml(a){
@@ -1414,10 +1463,7 @@ function renderContactsTab(){
   var navBtn=document.getElementById('nav-btn-contacts');
   if(navBtn)navBtn.innerHTML='📇 Contacts'+((D.contacts_ranked&&D.contacts_ranked.length)?' <span class="nav-count-badge">'+D.contacts_ranked.length+'</span>':'');
   var hint=document.getElementById('contacts-tab-hint');
-  var sourceBits=[];
-  if(D.contacts_tabs&&D.contacts_tabs.length)sourceBits.push('contacts tabs: '+D.contacts_tabs.join(', '));
-  if(D.leads_loaded)sourceBits.push('Named Account Leads');
-  if(hint)hint.textContent='Accounts with a named contact on file — ranked by Hot Score'+(sourceBits.length?' · '+sourceBits.join(' + '):'');
+  if(hint)hint.textContent='Accounts with a named contact on file — ranked by Hot Score'+(D.nac_loaded?' · source: Named Account Co-Pilot':'');
   var repSel=document.getElementById('filter-contacts-rep');
   var repFilter=repSel?repSel.value:'';
   var el=document.getElementById('contacts-list');el.innerHTML='';
@@ -1425,7 +1471,7 @@ function renderContactsTab(){
   if(!list.length){
     el.innerHTML='<div class="contacts-empty"><div class="contacts-empty-icon">📇</div>'+
       (!D.contacts_ranked||!D.contacts_ranked.length?
-        (sourceBits.length?'No accounts in this week\'s data matched a contact from '+sourceBits.join(' or ')+' yet.':'No contacts found — check that both the weekly tab and "Named Account Leads" are shared as "Anyone with the link can view."')
+        (D.nac_loaded?'No accounts in this week\'s data matched a contact from the Named Account Co-Pilot sheet yet.':'No contacts found — check that the Named Account Co-Pilot sheet is shared as "Anyone with the link can view."')
         :'No contacts on file for '+repFilter+' yet.')+
       '</div>';
     return;
@@ -1498,57 +1544,13 @@ async function scanForTab(sheetId,validatorFn,statusPrefix){
   }
   return found;
 }
-// Per Ellie (8/4/26): unlike Hot Accounts — where each week's dated tab is a full refreshed
-// snapshot, so only the newest one matters — the weekly Contacts tabs are each an incremental
-// batch of people who newly engaged that week. A tab named 6.30.26 sitting alongside 7.29.26
-// isn't stale data to discard, it's a separate batch of real people who should still show up.
-// So this checks every candidate in the lookback window (no early exit once one hit is found)
-// and returns ALL valid dated tabs, newest-first, instead of just the single most recent one.
-// Google's gviz endpoint silently serves the sheet's default tab for any sheet= name that
-// doesn't match a real tab, instead of erroring — confirmed in production, where this made
-// nearly every one of the ~150 generated date-guess candidates "validate" as contact data, all
-// silently pointing at the same underlying default tab (a wall of near-duplicate dates in the
-// footer, e.g. "8.4.2026, 08.04.2026, 8.4.26…"). Fingerprinting each hit's actual returned
-// content — not the candidate string used to fetch it — and keeping only one hit per distinct
-// fingerprint collapses that noise back down to the genuinely different tabs it came from.
-function tabContentFingerprint(data){
-  try{
-    var rows=(data&&data.table&&data.table.rows)||[];
-    var first=rows[0]?JSON.stringify(rows[0].c):'';
-    var last=rows[rows.length-1]?JSON.stringify(rows[rows.length-1].c):'';
-    return rows.length+'|'+first+'|'+last;
-  }catch(e){return 'fp-error-'+Math.random();}
-}
-// Per Ellie (8/4/26): batch size bumped from 7 to 25 — since this scan can't stop early (it has
-// to check every candidate to find every genuinely distinct dated tab), the batch size is what
-// controls how many sequential network round-trips it takes. 7-at-a-time over ~150 candidates
-// was ~22 round-trips and was the main driver of a "wicked slow" load complaint; 25-at-a-time
-// cuts that to ~6. These are all lightweight parallel GETs to the same Google Sheets endpoint, so
-// this is safe to push further if it's ever still too slow.
-var CONTACTS_SCAN_BATCH_SIZE=25;
-async function scanAllTabs(sheetId,validatorFn,statusPrefix){
-  var candidates=buildCandidates();
-  var rawHits=[];
-  for(var i=0;i<candidates.length;i+=CONTACTS_SCAN_BATCH_SIZE){
-    var batch=candidates.slice(i,i+CONTACTS_SCAN_BATCH_SIZE);
-    var tabEl=document.getElementById('loading-tab');
-    if(tabEl)tabEl.textContent=statusPrefix+'… (batch '+(Math.floor(i/CONTACTS_SCAN_BATCH_SIZE)+1)+'/'+Math.ceil(candidates.length/CONTACTS_SCAN_BATCH_SIZE)+')';
-    var results=await Promise.all(batch.map(function(c){
-      return fetchGvizTab(c.tab,sheetId).then(function(data){
-        return validatorFn(data)?{tab:c.tab,data:data,daysAgo:c.daysAgo}:null;
-      });
-    }));
-    results.filter(Boolean).forEach(function(hit){rawHits.push(hit);});
-  }
-  var groups={};
-  rawHits.forEach(function(hit){
-    var fp=tabContentFingerprint(hit.data);
-    if(!groups[fp]||hit.daysAgo<groups[fp].daysAgo)groups[fp]=hit;
-  });
-  var foundTabs=Object.keys(groups).map(function(fp){return groups[fp];});
-  foundTabs.sort(function(a,b){return a.daysAgo-b.daysAgo;});
-  return foundTabs;
-}
+// Per Ellie (8/17/26): this used to also power an exhaustive multi-tab Contacts scan (checking
+// every dated-tab guess, no early exit, since each weekly tab was an incremental batch of people
+// rather than a supersede-the-last-one snapshot). That scan — and its tab-content-fingerprinting
+// dedup helper, since gviz silently serves a sheet's default tab for any unmatched candidate name
+// — was removed once the Named Account Co-Pilot sheet replaced both old contacts sources with a
+// single fetch-by-name (see NAC_SHEET_ID/NAC_TAB_NAME above). scanForTab (used only by the Hot
+// Accounts scan now) is unaffected — it already stopped at the first match.
 
 // ── SAM Modal ────────────────────────────────────────────────
 function openSamModal(company){
@@ -1667,7 +1669,24 @@ function checkAuthAndInit(){
 }
 
 // ── MAIN ──────────────────────────────────────────────────────
-async function init(){
+// Per Ellie (8/13/26): builds the "🔄 refresh" link appended to the footer meta text on every
+// load (cached or fresh) so a rep who wants this week's data confirmed-fresh right now — e.g.
+// right after they know the sheet was just updated — isn't stuck waiting out the cache TTL.
+function footerRefreshLink(){
+  return ' · <span class="footer-refresh-link" onclick="refreshDashboard()" style="cursor:pointer;text-decoration:underline">🔄 refresh</span>';
+}
+// Clears the cached dashboard data (including the weekly Named Account Co-Pilot cache) and
+// forces a full re-scan/re-fetch of everything, bypassing all caches entirely.
+function refreshDashboard(){
+  try{localStorage.removeItem(DASH_CACHE_KEY);}catch(e){}
+  try{localStorage.removeItem(NAC_WEEKLY_CACHE_KEY);}catch(e){}
+  document.getElementById('main').style.display='none';
+  document.getElementById('error-screen').style.display='none';
+  document.getElementById('loading-screen').style.display='flex';
+  document.getElementById('loading-tab').textContent='Refreshing…';
+  init(true);
+}
+async function init(forceRefresh){
   function showError(title,msg,hint){
     document.getElementById('loading-screen').style.display='none';
     var es=document.getElementById('error-screen');es.style.display='flex';
@@ -1675,84 +1694,113 @@ async function init(){
     document.getElementById('err-msg').textContent=msg;
     document.getElementById('err-hint').innerHTML=hint||'';
   }
+  // Per Ellie (8/13/26): serve straight from cache when it's still fresh, skipping the entire
+  // fetch+scan+process pipeline (this is what makes repeat loads fast — see DASH_CACHE_TTL_MS
+  // above). forceRefresh (set by the footer's refresh link) always bypasses this.
+  if(!forceRefresh){
+    try{
+      var cachedRaw=localStorage.getItem(DASH_CACHE_KEY);
+      if(cachedRaw){
+        var cached=JSON.parse(cachedRaw);
+        var age=Date.now()-cached.savedAt;
+        if(cached.D&&age>=0&&age<DASH_CACHE_TTL_MS){
+          D=cached.D;
+          var ageMin=Math.max(1,Math.round(age/60000));
+          document.getElementById('footer-meta').innerHTML=cached.footerText+' · cached '+ageMin+'m ago'+footerRefreshLink();
+          document.getElementById('loading-screen').style.display='none';
+          document.getElementById('main').style.display='block';
+          renderAll_();
+          return;
+        }
+      }
+    }catch(e){/* corrupt or unavailable cache — fall through to a normal full load */}
+  }
   try{
-    // Per Ellie (8/4/26): these three sources used to be awaited one after another — Hot
-    // Accounts, then the Contacts scan, then Leads — which meant the exhaustive Contacts scan
-    // (can't stop early, has to check every candidate) was fully blocking everything behind it.
-    // Kicking off all three requests here, before awaiting any of them, lets them run
-    // concurrently instead of stacked in a queue. This was the main fix for a "wicked slow" load
-    // complaint after the multi-tab Contacts accumulation was added.
+    // Per Ellie (8/4/26, updated 8/17/26): Hot Accounts and Contacts are kicked off together,
+    // before awaiting either, so they run concurrently instead of stacked in a queue.
+    // Per Ellie (8/17/26): the Named Account Co-Pilot fetch is skipped entirely (no network
+    // request at all) when the weekly cache is still fresh — see NAC_WEEKLY_CACHE_KEY above. This
+    // check only depends on the clock, not on Hot Accounts data, so it happens before either
+    // promise starts rather than after — no reason to make a 49k-row request just to throw the
+    // result away a moment later once we realize the cache was already good.
     document.getElementById('loading-tab').textContent='Loading dashboard data…';
+    var nacCached=null;
+    try{nacCached=JSON.parse(localStorage.getItem(NAC_WEEKLY_CACHE_KEY)||'null');}catch(e){nacCached=null;}
+    var nacCacheFresh=!forceRefresh&&!!nacCached&&nacWeeklyCacheIsFresh(nacCached.savedAt);
+
     var hotAccountsPromise=scanForTab(SHEET_ID,isHotAccountData,'Scanning recent tabs for account data');
-    var contactsScanPromise=scanAllTabs(CONTACTS_SHEET_ID,isContactData,'Scanning tabs for contacts').catch(function(){return [];});
-    var leadsPromise=fetchGvizTab(LEADS_TAB_NAME,CONTACTS_SHEET_ID).catch(function(){return null;});
+    var nacPromise=nacCacheFresh?null:fetchGvizTab(NAC_TAB_NAME,NAC_SHEET_ID).catch(function(){return null;});
 
     var found=await hotAccountsPromise;
     if(!found)throw new Error('No hot accounts data found in the last several weeks. Check that the sheet is shared as "Anyone with the link can view" and that tabs are named M.D.YYYY, MM.DD.YYYY, M.D.YY, or MM.DD.YY (e.g. 6.16.2026 or 6.16.26).');
     document.getElementById('loading-tab').textContent='Loading tab "'+found.tab+'"…';
     var raw=parseGvizResponse(found.data);
+    var namedAccountKeys=extractNamedAccountKeys(raw);
 
     // Contacts are supplementary, not core — a problem loading them (sheet renamed, unshared,
-    // no recent tab yet, etc.) must never block or error out the main dashboard. Any failure
-    // here just leaves contactsByCompany empty and the Contacts tab shows its empty state.
-    var contactsByCompany={},contactsTabs=[];
+    // access revoked, etc.) must never block or error out the main dashboard. Any failure here
+    // just leaves contactsByCompany empty and the Contacts tab shows its empty state.
+    var contactsByCompany={},nacLoaded=false,nacAsOf=null;
     try{
-      var contactsFoundAll=await contactsScanPromise;
-      contactsFoundAll.forEach(function(hit){
-        contactsByCompany=mergeContactIndexes(contactsByCompany,buildContactIndex(parseGvizResponse(hit.data)));
-        contactsTabs.push(hit.tab);
-      });
-    }catch(e){contactsByCompany={};contactsTabs=[];}
-
-    // Named Account Leads is a second, always-on contacts source — a running list rather than a
-    // dated weekly tab, so it's fetched once by its exact name instead of scanned for. Same
-    // "supplementary, never blocks the dashboard" rule as the weekly Contacts tab above.
-    var leadsLoaded=false;
-    try{
-      var leadsData=await leadsPromise;
-      if(isLeadsData(leadsData)){
-        var leadsIdx=buildLeadsIndex(parseGvizResponse(leadsData));
-        contactsByCompany=mergeContactIndexes(contactsByCompany,leadsIdx);
-        leadsLoaded=true;
-      }
-    }catch(e){leadsLoaded=false;}
-
-    // "New this week" — diff this week's contact companies against the last tab we'd already
-    // processed (stored in localStorage), so the Contacts tab can flag names that weren't there
-    // last time instead of making a rep re-scan the whole ranked list to spot what changed.
-    // First run ever (no lastTab on file) intentionally flags nothing — everything looking
-    // "new" on day one would just be noise. If localStorage is unavailable, this just no-ops.
-    // Keyed on the most recent dated tab found (contactsTabs[0]) — that's the one that actually
-    // advances week to week. An older backfilled tab (e.g. 6.30.26 added alongside 7.29.26)
-    // doesn't retrigger "new this week" on its own; it just contributes its people to the merged
-    // set once, the same as it would if it had always been there.
-    var newContactKeys=[];
-    try{
-      var latestContactsTab=contactsTabs[0]||null;
-      if(latestContactsTab){
-        var curContactKeys=Object.keys(contactsByCompany);
-        var lastContactsTab=localStorage.getItem('sc_contacts_last_tab');
-        if(lastContactsTab===latestContactsTab){
-          newContactKeys=JSON.parse(localStorage.getItem('sc_contacts_new_keys')||'[]');
-        }else{
-          var prevContactKeys=JSON.parse(localStorage.getItem('sc_contacts_seen_keys')||'[]');
-          newContactKeys=lastContactsTab?curContactKeys.filter(function(k){return prevContactKeys.indexOf(k)===-1;}):[];
-          localStorage.setItem('sc_contacts_last_tab',latestContactsTab);
-          localStorage.setItem('sc_contacts_seen_keys',JSON.stringify(curContactKeys));
-          localStorage.setItem('sc_contacts_new_keys',JSON.stringify(newContactKeys));
+      if(nacCacheFresh){
+        contactsByCompany=nacCached.index||{};
+        nacLoaded=true;
+        nacAsOf=nacCached.savedAt;
+      }else{
+        var nacData=await nacPromise;
+        if(isNacData(nacData)){
+          var fullNacIndex=buildNacContactIndex(parseGvizResponse(nacData),Date.now());
+          // Per Ellie (8/17/26): trimmed to only this week's tracked Named Accounts before
+          // caching — the unfiltered index runs ~15MB (7,000+ distinct companies in the raw CRM
+          // export), well past what localStorage reliably holds, while the filtered set is a few
+          // MB at most. Nothing else is ever looked up anyway (a contact for a company that isn't
+          // a tracked named account is never displayed) — the one real tradeoff is that a company
+          // which only *becomes* a tracked named account mid-week won't have contacts populated
+          // until the next Friday refresh (or a manual refresh).
+          var filteredNacIndex={};
+          namedAccountKeys.forEach(function(k){if(fullNacIndex[k])filteredNacIndex[k]=fullNacIndex[k];});
+          contactsByCompany=filteredNacIndex;
+          nacLoaded=true;
+          nacAsOf=Date.now();
+          try{localStorage.setItem(NAC_WEEKLY_CACHE_KEY,JSON.stringify({savedAt:nacAsOf,index:filteredNacIndex}));}catch(e){}
         }
       }
+    }catch(e){contactsByCompany={};nacLoaded=false;}
+
+    // "New this week" — diff this load's contact companies against the last set seen (stored in
+    // localStorage), so the Contacts tab can flag names that weren't there last time instead of
+    // making a rep re-scan the whole ranked list to spot what changed. First run ever (nothing on
+    // file yet) intentionally flags nothing — everything looking "new" on day one would just be
+    // noise. Per Ellie (8/17/26): this used to be keyed on which dated tab was most recently
+    // found, since Contacts came from a rotating set of weekly tabs; now there's a single,
+    // continuously-updated sheet instead of rotating tabs, so it just diffs against whatever was
+    // seen on the previous load, every load, with no tab-name gating needed.
+    var newContactKeys=[];
+    try{
+      var curContactKeys=Object.keys(contactsByCompany);
+      var hasPrevRun=localStorage.getItem('sc_contacts_seen_keys')!==null;
+      if(hasPrevRun){
+        var prevContactKeys=JSON.parse(localStorage.getItem('sc_contacts_seen_keys')||'[]');
+        newContactKeys=curContactKeys.filter(function(k){return prevContactKeys.indexOf(k)===-1;});
+      }
+      localStorage.setItem('sc_contacts_seen_keys',JSON.stringify(curContactKeys));
     }catch(e){newContactKeys=[];}
 
     D=processRawData(raw,contactsByCompany);
-    D.contacts_tabs=contactsTabs;
-    D.leads_loaded=leadsLoaded;
+    D.nac_loaded=nacLoaded;
     D.new_contact_keys=newContactKeys;
-    // Per Ellie (8/4/26): footer shows only the single most recent contacts tab, not the full
-    // list — with multiple dated tabs now merged, joining all of them made this unreadable.
-    // Full coverage (every tab actually contributing contacts) still shows in the Contacts tab's
-    // own hint text, where there's room for it.
-    document.getElementById('footer-meta').textContent='Live data · tab: '+found.tab+(contactsTabs.length?' · contacts: '+contactsTabs[0]+(contactsTabs.length>1?' (+'+(contactsTabs.length-1)+' more)':''):' · contacts: none found')+(leadsLoaded?' + Named Account Leads':'');
+    // Per Ellie (8/17/26): contacts are now refreshed weekly, not on every load (see
+    // NAC_WEEKLY_CACHE_KEY above), so the footer says as-of-when rather than implying "live" —
+    // Hot Accounts data (score/WoW/intent) is still fetched fresh every load, this date is only
+    // about the contacts side.
+    var nacAsOfStr=nacAsOf?new Date(nacAsOf).toLocaleDateString('en-US',{month:'short',day:'numeric'}):null;
+    var footerText='Live data · tab: '+found.tab+(nacLoaded?' · contacts: Named Account Co-Pilot (as of '+nacAsOfStr+')':' · contacts: none found');
+    document.getElementById('footer-meta').innerHTML=footerText+footerRefreshLink();
+    // Per Ellie (8/13/26): cache the fully-processed result so the next load within
+    // DASH_CACHE_TTL_MS skips the ~172-request guessing scan entirely (see DASH_CACHE_KEY above).
+    // Wrapped in try/catch since this must never break a load that otherwise succeeded — a full
+    // localStorage quota or private-browsing restriction just means caching silently doesn't happen.
+    try{localStorage.setItem(DASH_CACHE_KEY,JSON.stringify({savedAt:Date.now(),D:D,footerText:footerText}));}catch(e){}
     document.getElementById('loading-screen').style.display='none';
     document.getElementById('main').style.display='block';
     renderAll_();
