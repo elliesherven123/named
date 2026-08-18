@@ -213,10 +213,9 @@ tr:hover td{background:rgba(0,154,222,0.03);}
   td::before{content:attr(data-label);font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.6px;min-width:72px;flex-shrink:0;padding-top:3px;}
   td[data-label=""]::before{display:none;}
   td[data-label=""]{padding:2px 0;}
-  /* Per Ellie (7/22/26): .pitch-td's 200px max-width was sized for the desktop table column.
-     Pitches now run longer (vertical detail + score/momentum clause + asset link), so on mobile
-     — where td becomes a flexed card row with the rest of the row's width available — let the
-     text use that full width instead of wrapping tightly inside the old 200px cap. */
+  /* .pitch-td's 200px max-width is sized for the desktop table column. On mobile, td becomes a
+     flexed card row with the rest of the row's width available, so let pitch text use that full
+     width instead of wrapping tightly inside the desktop cap. */
   td .pitch-td{max-width:none;}
 
   .co-domain{display:none;}
@@ -246,7 +245,7 @@ tr:hover td{background:rgba(0,154,222,0.03);}
 .pa-connect{background:rgba(63,183,72,0.08);color:#3FB748;border:1px solid rgba(63,183,72,0.22);}
 .pa-branded{background:rgba(250,204,21,0.10);color:#facc15;border:1px solid rgba(250,204,21,0.28);}
 
-/* Contacts (7/29/26) */
+/* Contacts */
 .ctag{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;white-space:nowrap;background:rgba(210,222,36,0.12);border:1px solid rgba(210,222,36,0.35);color:var(--gold);}
 .ctag-click{cursor:pointer;transition:background 0.15s;}
 .ctag-click:hover{background:rgba(210,222,36,0.22);}
@@ -443,27 +442,22 @@ tr:hover td{background:rgba(0,154,222,0.03);}
 // CONFIG
 // ═══════════════════════════════════════════════════════════════
 var SHEET_ID = '1AQrVdqo6YQ4sS5l5KbZg9t9W_ZzbIA99yuy5Bd6n5wU';
-// Per Ellie (8/17/26): replaced the old two-source contacts model (a dated-tab-scanned
-// "syndication" sheet + a separate static "Named Account Leads" tab) with this single sheet —
-// it's a superset of the old Named Account Leads list, now with real Last Activity / Last
-// Modified dates on every row, so recency can be computed directly instead of inferred from
-// which tab/sheet a contact happened to come from. Fetched by exact tab name, not scanned for,
-// same as the old Named Account Leads fetch — this sheet has only the one tab.
+// Contacts source: a single sheet with real Last Activity / Last Modified dates on every row,
+// so recency is computed directly rather than inferred from tab/sheet origin. Fetched by exact
+// tab name (not scanned for) since this sheet has only the one tab.
 var NAC_SHEET_ID = '1k7jm5zqmfQpW3DyUCzUCWjrZjYbVi5gV';
 var NAC_TAB_NAME = 'Named Account Co-Pilot';
-// Per Ellie (8/17/26): how recent a contact's Last Activity (or Last Modified, when Last
-// Activity is blank — true for roughly half the rows) has to be to count as "recently engaged."
-// Chosen from real distribution data pulled 8/17/26: 30d ≈ 1,185 contacts (2.4% of 49,319),
-// 60d ≈ 2,188 (4.4%), 90d ≈ 2,651 (5.4%), 180d ≈ 16,323 (33.1%, ruled out as too loose to mean
-// anything). Ellie chose 60 days.
+// How recent a contact's Last Activity (or Last Modified, when Last Activity is blank — true for
+// roughly half the rows) has to be to count as "recently engaged." Chosen from real distribution
+// data: 30d ≈ 1,185 contacts (2.4% of 49,319), 60d ≈ 2,188 (4.4%), 90d ≈ 2,651 (5.4%), 180d ≈
+// 16,323 (33.1%, ruled out as too loose to mean anything). Ellie chose 60 days.
 var RECENTLY_ENGAGED_WINDOW_DAYS = 60;
-// Per Ellie (8/17/26): the Named Account Co-Pilot sheet (49,319 rows, ~15MB once indexed) can't
-// be filtered server-side — confirmed directly against the live sheet that Last Activity/Last
-// Modified are stored as text, not real dates, so a gviz date-range query silently returns zero
-// rows instead of erroring. Since reformatting those columns is off the table, the fix is to stop
-// re-fetching this sheet on every load: it's fetched fresh once per week (any load on/after the
-// most recent Friday) and reused for every load until the next Friday, or until someone clicks
-// the footer's refresh link (which always forces a full re-fetch, see refreshDashboard).
+// The Named Account Co-Pilot sheet (49,319 rows, ~15MB once indexed) can't be filtered
+// server-side: Last Activity/Last Modified are stored as text, not real dates, so a gviz
+// date-range query silently returns zero rows instead of erroring. Since reformatting those
+// columns isn't an option, this sheet is fetched fresh once per week (any load on/after the most
+// recent Friday) and reused until the next Friday or a manual refresh (see refreshDashboard,
+// which always forces a full re-fetch).
 var NAC_WEEKLY_CACHE_KEY='sc_nac_weekly_cache_v1';
 // Midnight (local time) of the most recent Friday on/before `now` — if `now` IS a Friday, that's
 // today at midnight, so the first load each Friday always forces a fresh fetch (and later loads
@@ -492,13 +486,11 @@ function extractNamedAccountKeys(raw){
   });
   return Object.keys(seen);
 }
-// Per Ellie (8/3/26): replaced the old flat +12-for-any-contact boost — with contacts now on
-// file for nearly every account, a flat boost stopped differentiating anything. A recently-
-// engaged contact (see RECENTLY_ENGAGED_WINDOW_DAYS) is a warmer signal than a contact with no
-// recent activity on file, so it earns a bigger bump. See contactPriorityBoost. contact.source
-// stays 'weekly'/'leads' internally (unchanged label from the old tab-based source split) even
-// though it's now assigned by recency rather than by which tab/sheet a contact came from — kept
-// as-is so the boost, sort, and tag logic below didn't all need touching for this swap.
+// A recently-engaged contact (see RECENTLY_ENGAGED_WINDOW_DAYS) is a warmer signal than a
+// contact with no recent activity on file, so it earns a bigger priority bump — see
+// contactPriorityBoost. contact.source is 'weekly' or 'leads' internally; that label predates
+// the recency-based assignment below but is kept as-is so the boost/sort/tag logic downstream
+// didn't need touching when the assignment method changed.
 var CONTACT_PRIORITY_BOOST_SYNDICATION = 18;
 var CONTACT_PRIORITY_BOOST_LEADS = 6;
 function contactPriorityBoost(contacts){
@@ -506,16 +498,12 @@ function contactPriorityBoost(contacts){
   return contacts.some(function(c){return c.source==='weekly';})?CONTACT_PRIORITY_BOOST_SYNDICATION:CONTACT_PRIORITY_BOOST_LEADS;
 }
 var SAM_DEFAULT_KEY = 'SAM-df2e71ba-c0b2-4693-815f-8f3d3756f2ac';
-// Per Ellie (8/13/26): the Hot Accounts scan guesses candidate tab names (~172 speculative gviz
-// requests) since that sheet doesn't expose its real tab list without extra setup. This caches
-// the fully-processed dashboard object (D) in localStorage for a short window so repeat loads
-// within that window skip the entire fetch+process pipeline and render instantly. The first load
-// of the day (or any load after the cache expires) still pays the full cost. (As of 8/17/26 this
-// helps even more than before — the Contacts side no longer guesses/scans at all, see NAC_SHEET_ID
-// above — so the cache now mainly covers the Hot Accounts guessing.)
-// Bumped to v2 on 8/17/26 (Named Account Co-Pilot swap changed D's shape — this forces any old
-// cached entry from before the swap to be treated as a miss instead of rendering with stale
-// fields like the removed contacts_tabs/leads_loaded).
+// The Hot Accounts scan guesses candidate tab names (~172 speculative gviz requests) since that
+// sheet doesn't expose its real tab list without extra setup. This caches the fully-processed
+// dashboard object (D) in localStorage for a short window so repeat loads skip the entire
+// fetch+process pipeline and render instantly.
+// Cache key is versioned (v2) so a schema change to D invalidates old cached entries instead of
+// rendering with stale/missing fields.
 var DASH_CACHE_KEY='sc_dashboard_cache_v2';
 var DASH_CACHE_TTL_MS=10*60*1000; // 10 minutes
 
@@ -531,10 +519,8 @@ var COL = {
   last_score:"Last Week's Score",
   topic_keywords:'Product Topic Cluster Keywords'
 };
-// Per Ellie (8/17/26): the Named Account Co-Pilot sheet's real headers, confirmed directly
-// against the live sheet (it originally had no header row at all — Ellie added one). Do Not Call
-// and Email Opt Out are spelled out exactly, no more guessing on those two like the headerless
-// version would have required. lastActivity/lastModified feed the recency check below.
+// Named Account Co-Pilot sheet headers. Do Not Call and Email Opt Out are matched by exact
+// label. lastActivity/lastModified feed the recency check below.
 var COL_NAC = {
   firstName:'First Name', lastName:'Last Name', title:'Title', company:'Company / Account',
   phone:'Phone', country:'Country', email:'Email', leadSource:'Lead Source',
@@ -542,8 +528,8 @@ var COL_NAC = {
   lastActivity:'Last Activity', lastModified:'Last Modified'
 };
 
-// Per Ellie (8/3/26): rank each account's contacts by seniority so the most senior/decision-
-// maker name shows first, instead of whatever order they happened to land in the sheet. Neither
+// Ranks each account's contacts by seniority so the most senior/decision-maker name shows
+// first, instead of whatever order they happened to land in the sheet. Neither
 // source gives a real seniority field, only free-text Title, so this scores the title text
 // against a rough exec-to-IC hierarchy. Tiers checked top-down, first match wins; a standalone
 // "senior"/"sr" modifier adds a small bump so e.g. "Senior Manager" and "Senior DevOps Manager"
@@ -571,8 +557,8 @@ function titleSeniorityScore(title){
   if(base<100&&/\bsenior\b|\bsr\.?\b/.test(t))base+=5;
   return base;
 }
-// Per Ellie (8/3/26): a contact from the dated/weekly tab (lead syndication — someone who
-// recently engaged with our content) is a warmer, more actionable signal than a name pulled
+// A contact flagged as recently engaged (lead syndication — someone who recently engaged with
+// our content) is a warmer, more actionable signal than a name pulled
 // from the static Named Account Leads list, regardless of title. Source is checked first; title
 // seniority only breaks ties within the same source group.
 function sortContactsForDisplay(contacts){
@@ -586,9 +572,7 @@ function sortContactsForDisplay(contacts){
 
 // Normalizes a company name down to a bare matching key — strips legal suffixes, punctuation,
 // and a leading "The" so "Ryder System, Inc." (contacts sheet) and "Ryder System, Inc." or
-// "Ryder System" (Hot Accounts sheet) resolve to the same key. Verified against real rows from
-// both live sheets on 7/29/26 (XPO, Ryder System Inc, United Parcel Service, and CSX all matched
-// correctly with this logic).
+// "Ryder System" (Hot Accounts sheet) resolve to the same key.
 function normalizeCompanyForMatch(name){
   var s=(name||'').toLowerCase();
   s=s.replace(/&/g,' and ');
@@ -621,12 +605,11 @@ function calcUrgency(s,w,b,p,a){
   if(p>35&&s>=45)return 'Warm Up';
   return 'Monitor';
 }
-// Per Ellie (7/29/26): added a flat +12 point bonus when the account has 1+ matched contacts on
-// file. A real name and phone number beats an anonymous signal, so this is weighted just above
-// Branded Intent (20) worth of impact at the boost's full value, without letting a contact alone
-// override a genuinely hot, contact-less account (Score alone is still worth up to 40). Deliberately
-// scoped to Priority Score only (drives Your 5 ranking) — Top 10 / Rep Drilldown stay sorted by
-// raw Hot Score, unchanged, per the existing documented distinction between those views.
+// contactBoost (see contactPriorityBoost — up to 18 for a recently-engaged contact, 6 otherwise)
+// is weighted close to Branded Intent's max 20-point contribution, without letting a contact
+// alone override a genuinely hot, contact-less account (Score alone is still worth up to 40).
+// Deliberately scoped to Priority Score only (drives Your 5 ranking) — Top 10 / Rep Drilldown
+// stay sorted by raw Hot Score, unaffected by contacts at all.
 function calcPriority(s,w,b,a,p,contactBoost){return Math.round(((s/80)*40+Math.min(w/60,1)*25+(b/90)*20+(a/71)*10+(p/65)*5+(contactBoost||0))*10)/10;}
 
 // ── IR CONTEXT LOOKUP ────────────────────────────────────────
@@ -730,12 +713,11 @@ function irHtml(company,box){
 
 
 // ── PRODUCT AREA CLASSIFICATION ──────────────────────────────
-// Per Ellie (7/22/26): HyperCore and Reliant no longer render as two separate product names —
-// on screen and in pitch copy both just say "Edge Computing" (the umbrella story is core HCI
-// appliance workloads through hardened edge deployments, so one label removes the redundant
-// two-tag/two-name split). The underlying Cluster 1 vs Cluster 2 signal from Column K is still
-// tracked internally (see classifyProductAreas/buildAccountPitch) purely to flavor the pitch
-// copy — it no longer produces a second visible tag.
+// HyperCore and Reliant render as a single "Edge Computing" label on screen and in pitch copy
+// (the umbrella story is core HCI appliance workloads through hardened edge deployments). The
+// underlying Cluster 1 vs Cluster 2 signal from Column K is still tracked internally (see
+// classifyProductAreas/buildAccountPitch) purely to flavor the pitch copy — it doesn't produce
+// a second visible tag.
 var PRODUCT_LABELS = {
   edge:      'Edge Computing',
   acuvigil:  'SC//AcuVigil™',
@@ -745,24 +727,21 @@ var PRODUCT_LABELS = {
   branded:   'Scale Computing™'
 };
 
-// Cluster keyword sets — sourced from Product Topic Intent Report
-// Updated 7/2026 to the 7-cluster taxonomy:
+// Cluster keyword sets — sourced from Product Topic Intent Report. 7-cluster taxonomy:
 //   1: Edge Computing - Core HCI     2: Edge Computing - At the Edge
 //   3: SC//AcuVigil                 4: SC//Connect
 //   5: Competitor - VMware          6: Competitor - Nutanix
 //   7: Branded Keywords
-// HCIA, Cloud Infrastructure, Air-Gapped Backup, and Cloud Storage stay excluded
-// (too generic, caused false-positive cluster hits). VMware/Nutanix/SimpliVity were
-// pulled out of Cluster 1 into their own competitor clusters (5,6) purely so the pitch's
-// competitor-displacement logic (hasVMware/hasNutanix in buildAccountPitch) can detect them
-// cleanly from Column K. Per Ellie (7/18/26): Clusters 5/6 no longer render as Product Area
-// tags at all (removed from CLUSTER_TO_PRODUCTS and the Product Area filter below) — an
-// account whose only hit is a competitor cluster now falls through to the normal Edge Computing
-// fallback in Product Area, while the pitch's competitor-displacement text is unaffected since
-// it reads Column K hits directly, not the Product Area tags. Per Ellie (7/22/26): Clusters 1
-// and 2 used to map to two separate branded tags (SC//HyperCore™ / SC//Reliant™) — both now
-// collapse to one 'edge' / "Edge Computing" tag (see PRODUCT_LABELS), though Column K still
-// distinguishes them internally so pitch copy can lead with core-HCI vs. hardened-edge framing.
+// HCIA, Cloud Infrastructure, Air-Gapped Backup, and Cloud Storage stay excluded (too generic,
+// caused false-positive cluster hits). VMware/Nutanix/SimpliVity are their own competitor
+// clusters (5,6) purely so the pitch's competitor-displacement logic (hasVMware/hasNutanix in
+// buildAccountPitch) can detect them cleanly from Column K. Clusters 5/6 don't render as Product
+// Area tags at all (not in CLUSTER_TO_PRODUCTS or the Product Area filter below) — an account
+// whose only hit is a competitor cluster falls through to the normal Edge Computing fallback in
+// Product Area, while the pitch's competitor-displacement text is unaffected since it reads
+// Column K hits directly, not the Product Area tags. Clusters 1 and 2 both collapse to the same
+// 'edge' / "Edge Computing" tag (see PRODUCT_LABELS), though Column K still distinguishes them
+// internally so pitch copy can lead with core-HCI vs. hardened-edge framing.
 var CLUSTER_KEYWORDS = {
   1:['hyper-converged infrastructure','converged infrastructure','server virtualization','virtualization','virtual machines','bare-metal hypervisor','native hypervisor','virtual desktop infrastructure','vdi','virtual desktops','desktop as a service','daas','thin client','zero client','data protection','backup and recovery','backup software','cloud backup','backup as a service','baas','disaster recovery','business continuity','high availability','fault tolerance','recovery point objective','rpo','enterprise storage','storage area networks','san','network attached storage','nas','block storage','disk storage','raid','ransomware','it infrastructure','it operations','data center management','data center infrastructure management','dcim','server management','infrastructure as code','iac','infrastructure provisioning','automated provisioning','container orchestration','containerization','containers','kubernetes','ansible','hashicorp terraform','terraform','software deployment','deployment automation','total cost of ownership','tco'],
   2:['edge computing','edge ai','fog computing','internet of things','iot','industrial internet of things','smart retail','connected retail','hybrid cloud','multicloud','private cloud','cloud migration','cloud repatriation','cloud provisioning','software-defined infrastructure','high performance computing','gpu clusters','zero touch provisioning','ztp'],
@@ -772,10 +751,9 @@ var CLUSTER_KEYWORDS = {
   6:['nutanix','simplivity'],
   7:['scale computing','scalecomputing','scale hypercore','scale computing hypervisor']
 };
-// Per Ellie (7/18/26): 5 (VMware) and 6 (Nutanix) intentionally have no entry here — competitor
-// clusters no longer produce a Product Area tag (see comment above CLUSTER_KEYWORDS).
-// Clusters 1 and 2 both roll up to the single 'edge' (Edge Computing) tag now — see note above
-// PRODUCT_LABELS.
+// 5 (VMware) and 6 (Nutanix) intentionally have no entry here — competitor clusters don't
+// produce a Product Area tag (see comment above CLUSTER_KEYWORDS). Clusters 1 and 2 both roll
+// up to the single 'edge' (Edge Computing) tag — see note above PRODUCT_LABELS.
 var CLUSTER_TO_PRODUCTS = {1:['edge'],2:['edge'],3:['acuvigil'],4:['connect'],7:['branded']};
 
 // Returns every cluster (1-7) whose keywords appear in the topic string, ordered by where
@@ -809,17 +787,17 @@ function classifyProductAreas(a){
   // tags built from them here preserve that same order.
   var hits=a.topic_kw?detectClusters(a.topic_kw):[];
 
-  // Per Ellie (7/18/26, updated 7/22/26): driven by whichever product cluster (1-4) is literally
-  // FIRST in Column K. Clusters 1 and 2 both resolve to the single 'edge' tag now (see
-  // CLUSTER_TO_PRODUCTS), so which one fired first no longer changes what's shown — it only
-  // flavors the pitch copy (core HCI appliance framing vs. hardened/IoT edge framing) via
-  // orderedTags.primaryCluster below. Clusters 3/4 still map to their own single tag, unchanged.
+  // Driven by whichever product cluster (1-4) is literally FIRST in Column K. Clusters 1 and 2
+  // both resolve to the single 'edge' tag (see CLUSTER_TO_PRODUCTS), so which one fired first
+  // doesn't change what's shown — it only flavors the pitch copy (core HCI appliance framing vs.
+  // hardened/IoT edge framing) via orderedTags.primaryCluster below. Clusters 3/4 each map to
+  // their own single tag.
   var productClusters=hits.filter(function(c){return c>=1&&c<=4;});
   var primaryCluster=productClusters[0];
 
   // No forced reordering here — tags are added in hits.forEach below in the exact order their
   // clusters first appear in the Column K text. Clusters 1 and 2 both add the same 'edge' tag
-  // (addTag is a no-op on repeat keys), so there's no longer a two-tag case to reorder.
+  // (addTag is a no-op on repeat keys).
   hits.forEach(function(c){(CLUSTER_TO_PRODUCTS[c]||[]).forEach(addTag);});
 
   // Secondary: vertical + company name keywords — appended after any Column K matches
@@ -833,29 +811,27 @@ function classifyProductAreas(a){
   if(!hasProduct&&(a.intent_product>15||a.intent_branded>10||a.ai_readiness>25||a.score>=45))addTag('edge');
   if(!(areas.edge||areas.acuvigil||areas.connect))addTag('edge');
 
-  // Per Ellie (7/13/26): Branded tag is pulled in when Cluster 7 literally appears anywhere in
-  // Column K (via the hits loop above), OR when Branded Intent score is over 55 — either
-  // condition alone is enough to show the Scale Computing™ tag.
+  // Branded tag is pulled in when Cluster 7 literally appears anywhere in Column K (via the hits
+  // loop above), OR when Branded Intent score is over 55 — either condition alone is enough to
+  // show the Scale Computing™ tag.
   if(a.intent_branded>55)addTag('branded');
 
-  // Per Ellie (7/22/26): still expose which product cluster (1 or 2) was literally first in
-  // Column K, even though both now collapse to the same visible 'edge' tag — buildAccountPitch
-  // uses this to flavor the pitch copy (core HCI appliance workloads vs. hardened/IoT edge
-  // deployments) without showing a second tag on screen.
+  // Still expose which product cluster (1 or 2) was literally first in Column K, even though
+  // both collapse to the same visible 'edge' tag — buildAccountPitch uses this to flavor the
+  // pitch copy (core HCI appliance workloads vs. hardened/IoT edge deployments) without showing
+  // a second tag on screen.
   orderedTags.primaryCluster=primaryCluster;
 
   return orderedTags;
 }
 
-// Per Ellie (7/18/26): the set of Product Area keys actually SHOWN on screen for an account —
-// pulled out of productAreaHtml so the "Product Area" filter dropdown in the All Accounts modal
-// can filter on exactly what's displayed, rather than the full (uncapped) product_areas array.
-// Cap to the first cluster called out in Column K — except the Branded (Cluster 7 / "Scale
-// Computing™") tag, which still shows if present (either a literal Column K hit or Branded
-// Intent score > 55 — see classifyProductAreas).
-// Per Ellie (7/22/26): Clusters 1 and 2 now share the single 'edge' (Edge Computing) tag, so the
-// old two-tag "Cluster 2 first shows HyperCore + Reliant together" branch is gone — there's only
-// ever one product tag here now.
+// The set of Product Area keys actually SHOWN on screen for an account — pulled out of
+// productAreaHtml so the "Product Area" filter dropdown in the All Accounts modal can filter on
+// exactly what's displayed, rather than the full (uncapped) product_areas array. Cap to the
+// first cluster called out in Column K — except the Branded (Cluster 7 / "Scale Computing™")
+// tag, which still shows if present (either a literal Column K hit or Branded Intent score > 55
+// — see classifyProductAreas). Clusters 1 and 2 share the single 'edge' (Edge Computing) tag, so
+// there's only ever one product tag here.
 function shownProductAreas(areas){
   areas=areas||[];
   var shown=areas.slice(0,1);
@@ -870,9 +846,9 @@ function productAreaHtml(areas,wrap){
   return wrap?'<div style="display:flex;gap:3px;flex-wrap:wrap;margin-bottom:2px">'+html+'</div>':html;
 }
 
-// Per Ellie (7/22/26): short descriptor of the systems/sites that actually matter for each
-// vertical, woven into pitch copy so two accounts in the same cluster/score bucket don't read
-// as identical canned text — the pitch names what's actually running at that account's sites.
+// Short descriptor of the systems/sites that actually matter for each vertical, woven into
+// pitch copy so two accounts in the same cluster/score bucket don't read as identical canned
+// text — the pitch names what's actually running at that account's sites.
 var VERTICAL_CONTEXT = {
   'Retail':                      'POS, self-checkout, and digital signage across every store',
   'Grocery':                     'POS, digital pricing, and pharmacy systems across every store',
@@ -890,19 +866,18 @@ var VERTICAL_CONTEXT = {
   'Enterprise':                  'distributed sites and remote offices'
 };
 
-// Per Ellie (7/22/26): real, current scalecomputing.com assets to link from the pitch box, so
-// reps get a specific page to send/reference instead of a generic homepage link. Picked to match
-// either the product being pitched or the account's vertical — see assetForPitch below.
-// Verified live on scalecomputing.com July 2026.
-// Per Ellie (7/22/26): only listed here when the page is a genuine, specific fit for that
-// vertical — not an analogy or a generic catch-all. Deliberately has NO entry for 'Home &
-// Building' (that vertical mixes big-box home retailers with HVAC/construction/trades accounts,
-// two very different audiences no single page fits), 'Technology' (SC//Platform's own overview
-// page isn't actually vertical-specific — it's just the generic product page), or 'Enterprise'
-// (a catch-all for anything unclassified, so there's no real vertical signal to match against).
-// The dashboard has no company-size/employee-count column to match on either, so "does this
-// asset genuinely fit" is judged on vertical + product fit alone — assetForPitch returns no
-// asset at all (no link shown) rather than force one of these weak matches.
+// Real scalecomputing.com assets to link from the pitch box, so reps get a specific page to
+// send/reference instead of a generic homepage link. Picked to match either the product being
+// pitched or the account's vertical — see assetForPitch below.
+// Only listed here when the page is a genuine, specific fit for that vertical — not an analogy
+// or a generic catch-all. Deliberately has NO entry for 'Home & Building' (that vertical mixes
+// big-box home retailers with HVAC/construction/trades accounts, two very different audiences no
+// single page fits), 'Technology' (SC//Platform's own overview page isn't actually
+// vertical-specific — it's just the generic product page), or 'Enterprise' (a catch-all for
+// anything unclassified, so there's no real vertical signal to match against). The dashboard has
+// no company-size/employee-count column to match on either, so "does this asset genuinely fit"
+// is judged on vertical + product fit alone — assetForPitch returns no asset at all (no link
+// shown) rather than force one of these weak matches.
 var VERTICAL_ASSETS = {
   'Retail':                      {url:'https://www.scalecomputing.com/retail-edge-hci-solutions',label:'Edge Computing for Retail IT'},
   'Grocery':                     {url:'https://www.scalecomputing.com/grocery-retail-it',label:'Edge Computing for Grocery & Food Retail'},
@@ -927,9 +902,9 @@ var PRODUCT_ASSETS = {
 // asset when one is actively being displaced, then a product-specific asset for AcuVigil/Connect
 // (AcuVigil gets the convenience-store asset specifically for Retail/Grocery, since that's what
 // the real page covers), and otherwise the account's vertical-specific Edge Computing page IF
-// one is a genuine fit. Per Ellie (7/22/26): no generic fallback anymore — if nothing here
-// actually matches this company/vertical, return null and skip the link entirely rather than
-// force a weak one (see assetLinkHtml).
+// one is a genuine fit. No generic fallback — if nothing here actually matches this
+// company/vertical, return null and skip the link entirely rather than force a weak one (see
+// assetLinkHtml).
 function assetForPitch(leadKey,vertical,competitor){
   if(competitor)return PRODUCT_ASSETS.competitor;
   if(leadKey==='acuvigil')return(vertical==='Retail'||vertical==='Grocery')?PRODUCT_ASSETS.acuvigil_cstore:PRODUCT_ASSETS.acuvigil;
@@ -942,9 +917,9 @@ function assetLinkHtml(asset){
   return'<br><a class="ir-link" href="'+asset.url+'" target="_blank" rel="noopener">'+asset.label+' →</a>';
 }
 
-// Per Ellie (7/22/26): one short, actionable clause built from the account's own momentum/
-// branded/AI signals — NOT a stats readout. No raw numbers, no "sits at X" — this exists so the
-// rep gets a one-line steer on how to work the account (move fast, warm them up first, have a
+// One short, actionable clause built from the account's own momentum/branded/AI signals — NOT a
+// stats readout. No raw numbers, no "sits at X" — this exists so the rep gets a one-line steer
+// on how to work the account (move fast, warm them up first, have a
 // backup angle ready), not a data dump. Returns at most one clause (the single most useful one,
 // checked in priority order) so the pitch stays brief. Returns '' when nothing here is actually
 // worth calling out — most accounts won't have a notable momentum/branded/AI signal, and a pitch
@@ -954,9 +929,8 @@ function accountSignalCue(a,skipBranded,skipAI){
   var w=(typeof a.wow_pct==='number')?a.wow_pct:0,b=a.intent_branded,ai=a.ai_readiness;
   if(w>=25)return'This one is heating up fast, don\'t let it sit.';
   if(w<=-15)return'Interest has cooled off, confirm it\'s still live before you prioritize it.';
-  // Per Ellie (7/22/26): dropped the low-branded "warm them up" cue — a low/zero Branded Intent
-  // score is the default state for most accounts, not a notable signal, so it was showing up on
-  // the majority of pitches and reading like filler rather than an actual insight.
+  // No cue for low/zero Branded Intent — that's the default state for most accounts, not a
+  // notable signal, so it would read as filler rather than actual insight.
   if(!skipBranded&&b>=40)return'They already know the Scale Computing name, so skip straight to the pitch.';
   if(!skipAI&&ai>=35)return'If this angle stalls, their AI initiative is a strong pivot.';
   return'';
@@ -998,10 +972,9 @@ function buildAccountPitch(a){
   var isBranded=areas.indexOf('branded')>=0; // matches the "Scale Computing™" tag — fires on a
   // literal Cluster 7 keyword hit in Column K or Branded Intent score > 55
 
-  // Per Ellie (7/13/26): the branded pitch leads with whichever product tag actually appears
-  // first in areas — the same tag rendered as the primary Product Area chip — so the pitch
-  // never contradicts what's on screen. Per Ellie (7/22/26): HyperCore/Reliant collapsed into
-  // the single 'edge' key.
+  // The branded pitch leads with whichever product tag actually appears first in areas — the
+  // same tag rendered as the primary Product Area chip — so the pitch never contradicts what's
+  // on screen. HyperCore/Reliant collapse into the single 'edge' key.
   var LEAD_PRODUCT_ORDER=['edge','acuvigil','connect'];
   var brandedLeadKey=areas.filter(function(k){return LEAD_PRODUCT_ORDER.indexOf(k)>=0;})[0]||'edge';
   var leadProduct=PRODUCT_LABELS[brandedLeadKey]||'Edge Computing';
@@ -1013,13 +986,12 @@ function buildAccountPitch(a){
     skipBranded=true; // the lead sentence itself already covers branded awareness
     lead='They\'ve searched for Scale Computing by name, so brand awareness is already there. Lead with '+leadProduct+' and ground the call in '+vCtx+'. Book a discovery call now.';
 
-  // Per Ellie (7/22/26): when Column K calls out BOTH the core-HCI cluster (1) and the at-the-
-  // edge cluster (2), AND one of those two is literally the first product cluster in the cell,
-  // pitch the full spectrum together — this used to require Cluster 2 specifically to be first;
-  // now either order works, since both clusters map to the same on-screen "Edge Computing" tag.
-  // Still gated on primaryCluster being 1 or 2 so an account where Cluster 3/4 is genuinely first
-  // (and 1/2 only show up later in the cell) keeps pitching ONLY that first cluster's product,
-  // matching the single capped Product Area tag shown on screen.
+  // When Column K calls out BOTH the core-HCI cluster (1) and the at-the-edge cluster (2), AND
+  // one of those two is literally the first product cluster in the cell, pitch the full spectrum
+  // together — either order works, since both clusters map to the same on-screen "Edge
+  // Computing" tag. Still gated on primaryCluster being 1 or 2 so an account where Cluster 3/4 is
+  // genuinely first (and 1/2 only show up later in the cell) keeps pitching ONLY that first
+  // cluster's product, matching the single capped Product Area tag shown on screen.
   } else if((primaryCluster===1||primaryCluster===2)&&hasCluster1&&hasCluster2){
     leadKey='edge';
     var compAddCombo=competitor?' Position this as a '+competitor+' displacement opportunity on licensing simplicity and total cost of ownership.':'';
@@ -1092,11 +1064,10 @@ function processRawData(raw,contactsByCompany){
   function col(row,name){var i=headers.indexOf(name);return i>=0?row[i]:null;}
   function num(v,fb){var n=parseFloat(v);return isNaN(n)?(fb||0):n;}
   var accounts=[];
-  // Per Ellie (8/3/26): the Company column header text isn't reliable — it's shown up as
-  // literally "z" on at least one live tab (probably a stray edit on the sheet side), which
-  // silently dropped every single row since the label-based lookup below found nothing. Company
-  // has always lived in column A regardless of what its header says, so fall back to index 0
-  // whenever the "Company" label itself can't be found, rather than trusting the header text.
+  // The Company column header text isn't reliable — it's shown up as literally "z" on at least
+  // one live tab (a stray edit on the sheet side), which silently dropped every row since the
+  // label-based lookup below found nothing. Company always lives in column A regardless of what
+  // its header says, so fall back to index 0 whenever the "Company" label can't be found.
   var companyColIdx=headers.indexOf(COL.company);
   rows.forEach(function(row){
     var company=String((companyColIdx>=0?row[companyColIdx]:row[0])||'').trim();
@@ -1155,11 +1126,11 @@ function processRawData(raw,contactsByCompany){
 
 function guessDomain(co){return co.toLowerCase().replace(/[^a-z0-9\s]/g,'').replace(/\b(the|inc|llc|ltd|co|corp|company|group|holdings|international|services|solutions|systems|technologies|technology|enterprises|global)\b/g,'').trim().split(/\s+/)[0]+'.com';}
 
-// Per Ellie (8/17/26): gviz represents a real Date-typed cell as a literal string like
-// "Date(2026,7,17)" (month is 0-indexed in that format, unlike the M/D/YYYY text it also has to
-// handle as a fallback in case a date column is ever formatted as plain text instead). Returns a
-// real JS Date, or null if the value is blank/unparseable — callers treat null as "no date on
-// file for this contact" rather than throwing.
+// gviz represents a real Date-typed cell as a literal string like "Date(2026,7,17)" (month is
+// 0-indexed in that format, unlike the M/D/YYYY text it also has to handle as a fallback in case
+// a date column is ever formatted as plain text instead). Returns a real JS Date, or null if the
+// value is blank/unparseable — callers treat null as "no date on file for this contact" rather
+// than throwing.
 function parseGvizDateValue(v){
   if(v===null||v===undefined||v==='')return null;
   if(v instanceof Date)return isNaN(v.getTime())?null:v;
@@ -1172,14 +1143,12 @@ function parseGvizDateValue(v){
   return isNaN(d.getTime())?null:d;
 }
 // Builds a lookup of normalized-company-key -> array of contact records from the Named Account
-// Co-Pilot sheet. See normalizeCompanyForMatch() for the matching key logic.
-// Per Ellie (8/17/26): this replaced the old two-source model (a dated-tab-scanned sheet merged
-// with a separate static "Named Account Leads" tab) with this one sheet, which now carries real
-// Last Activity / Last Modified dates. contact.source is assigned 'weekly' when the contact's
-// most recent of those two dates falls within RECENTLY_ENGAGED_WINDOW_DAYS, 'leads' otherwise —
-// same two labels the old tab-origin split used, so contactPriorityBoost, sortContactsForDisplay,
-// and the "🔥 Recently Engaged" tag in contactRowHtml all keep working unchanged. nowMs is passed
-// in (rather than read via Date.now() in here) so this stays testable/deterministic.
+// Co-Pilot sheet. See normalizeCompanyForMatch() for the matching key logic. contact.source is
+// assigned 'weekly' when the contact's most recent of Last Activity/Last Modified falls within
+// RECENTLY_ENGAGED_WINDOW_DAYS, 'leads' otherwise — those two labels are what
+// contactPriorityBoost, sortContactsForDisplay, and the "🔥 Recently Engaged" tag in
+// contactRowHtml key off of. nowMs is passed in (rather than read via Date.now() in here) so
+// this stays testable/deterministic.
 function buildNacContactIndex(craw,nowMs){
   var idx={};
   if(!craw)return idx;
@@ -1189,8 +1158,8 @@ function buildNacContactIndex(craw,nowMs){
     var company=String(col(row,COL_NAC.company)||'').trim();
     var key=normalizeCompanyForMatch(company);
     if(!key)return;
-    // Last Activity is blank for roughly half of all rows (confirmed 8/17/26) — Last Modified is
-    // populated almost universally, so it's the fallback rather than a second independent check.
+    // Last Activity is blank for roughly half of all rows — Last Modified is populated almost
+    // universally, so it's the fallback rather than a second independent check.
     var engagementDate=parseGvizDateValue(col(row,COL_NAC.lastActivity))||parseGvizDateValue(col(row,COL_NAC.lastModified));
     var daysAgo=engagementDate?Math.round((nowMs-engagementDate.getTime())/86400000):null;
     var recentlyEngaged=daysAgo!==null&&daysAgo>=0&&daysAgo<=RECENTLY_ENGAGED_WINDOW_DAYS;
@@ -1248,7 +1217,7 @@ function actions(co){
   return '<div class="buyer-btns"><a class="btn-li" href="'+li+'" target="_blank" rel="noopener">🔍 LinkedIn</a><a class="btn-nav" href="'+nav+'" target="_blank" rel="noopener">⭐ Sales Nav</a><a class="btn-news" href="'+news+'" target="_blank" rel="noopener">📰 News</a></div>';
 }
 
-// ── CONTACTS (7/29/26) ──────────────────────────────────────────
+// ── CONTACTS ──────────────────────────────────────────
 // Small pill dropped next to a company name anywhere in the dashboard when 1+ contacts are on
 // file — Overview Top 10, Rep Drilldown, and Big Movers stay sorted by raw Hot Score (unchanged
 // per the documented Top10-vs-Your5 distinction), so this badge is how those views surface
@@ -1282,16 +1251,15 @@ function contactLinkedIn(contact){
 function contactRowHtml(contact){
   var full=(contact.firstName+' '+contact.lastName).trim()||'(name withheld)';
   var phoneFmt=formatPhone(contact.phone);
-  // Per Ellie (8/3/26): Named Account Leads carries real Do Not Call / Email Opt Out flags —
-  // when either is true, show the number/email as plain text instead of a clickable tel:/mailto:
-  // link, so a rep doesn't one-tap contact someone who's opted out.
+  // Named Account Co-Pilot carries real Do Not Call / Email Opt Out flags — when either is true,
+  // show the number/email as plain text instead of a clickable tel:/mailto: link, so a rep
+  // doesn't one-tap contact someone who's opted out.
   var phoneHtml=phoneFmt?(contact.doNotCall?'<span class="contact-phone contact-blocked">☎ '+phoneFmt+' <span class="dnc-tag">🚫 Do Not Call</span></span>':'<a class="contact-phone" href="tel:'+contact.phone.replace(/\D/g,'')+'">☎ '+phoneFmt+'</a>'):'';
   var emailHtml=contact.email?(contact.emailOptOut?'<span class="contact-phone contact-blocked">✉ '+contact.email+' <span class="dnc-tag">🚫 Opted Out</span></span>':'<a class="contact-phone" href="mailto:'+contact.email+'">✉ '+contact.email+'</a>'):'';
   var leadSourceTag=contact.leadSource?'<span class="contact-priority-tag">📥 '+contact.leadSource+'</span>':'';
-  // Per Ellie (8/17/26): contact.source is now assigned by recency (Last Activity/Last Modified
-  // within RECENTLY_ENGAGED_WINDOW_DAYS) rather than by which tab a contact came from, but the
-  // 'weekly' label and this tag are unchanged — it's still calling out "this is a warmer, more
-  // actionable signal than the rest of the list," just computed a different way now.
+  // contact.source is assigned by recency (Last Activity/Last Modified within
+  // RECENTLY_ENGAGED_WINDOW_DAYS) — the 'weekly' label and this tag call out "this is a warmer,
+  // more actionable signal than the rest of the list."
   var syndicationTag=contact.source==='weekly'?'<span class="contact-syndication-tag">🔥 Recently Engaged</span>':'';
   return '<div class="contact-row"><div class="contact-name">'+full+'</div>'+
     (contact.title?'<div class="contact-title">'+contact.title+'</div>':'')+
@@ -1303,12 +1271,12 @@ function keyContactsHtml(a){
   return '<div class="contact-box"><div class="contact-box-title">📇 Key Contact'+(a.contacts.length>1?'s':'')+' on File</div>'+
     a.contacts.map(contactRowHtml).join('')+'</div>';
 }
-// Per Ellie (8/3/26): the Contacts tab needed a collapse for accounts with a long contact list
-// (10+ isn't rare once Named Account Leads is merged in) — dumping every name inline made the
-// card unscannable. Below COLLAPSE_THRESHOLD contacts, behaves exactly like keyContactsHtml
-// (no point collapsing 2-3 names). Above it, starts collapsed behind a click-to-expand header
-// so the card stays a fixed, glanceable height regardless of contact count. uid must be unique
-// per card on the page (renderContactsTab uses the row index).
+// The Contacts tab needs a collapse for accounts with a long contact list (10+ isn't rare) —
+// dumping every name inline made the card unscannable. Below COLLAPSE_THRESHOLD contacts,
+// behaves exactly like keyContactsHtml (no point collapsing 2-3 names). Above it, starts
+// collapsed behind a click-to-expand header so the card stays a fixed, glanceable height
+// regardless of contact count. uid must be unique per card on the page (renderContactsTab uses
+// the row index).
 var CONTACTS_TAB_COLLAPSE_THRESHOLD=5;
 function keyContactsHtmlForTab(a,uid){
   if(!a.contacts||!a.contacts.length)return'';
@@ -1330,10 +1298,9 @@ function toggleContactsBox(id){
   var caret=document.getElementById('caret-'+id);
   if(caret)caret.textContent=isOpen?'▾':'▴';
 }
-// True if this account's contact(s) weren't in the Contacts sheet as of the last tab we'd
-// already processed — see the localStorage diff in init(). Scoped to the Contacts tab only,
-// per Ellie (7/29/26) — this is a "what's new" signal, not a reason to reorder or badge it
-// anywhere else.
+// True if this account's contact(s) weren't in the contacts data as of the last load — see the
+// localStorage diff in init(). Scoped to the Contacts tab only — this is a "what's new" signal,
+// not a reason to reorder or badge it anywhere else.
 function isNewContact(a){
   return !!(D.new_contact_keys&&D.new_contact_keys.indexOf(normalizeCompanyForMatch(a.company))>-1);
 }
@@ -1396,10 +1363,10 @@ function toggleAcct(id){var b=document.getElementById(id),ic=document.getElement
 function openDrill(rep){document.querySelectorAll('.nav-btn').forEach(function(b){b.classList.remove('active');if(b.textContent.includes('Rep Drilldown'))b.classList.add('active');});document.querySelectorAll('.tab-panel').forEach(function(p){p.classList.remove('active');});document.getElementById('tab-drilldown').classList.add('active');loadDrill(rep);window.scrollTo(0,0);}
 
 var allF=[],allP=1,PS=25;
-// Per Ellie (7/18/26): fixed display order for the Product Area filter dropdown — matches the
-// taxonomy order used everywhere else (CLUSTER_TO_PRODUCTS / PRODUCT_LABELS), not a dynamic
-// scan of the data, since these are code-defined categories rather than sheet-driven strings.
-// VMware/Nutanix intentionally excluded — they no longer render as Product Area tags at all.
+// Fixed display order for the Product Area filter dropdown — matches the taxonomy order used
+// everywhere else (CLUSTER_TO_PRODUCTS / PRODUCT_LABELS), not a dynamic scan of the data, since
+// these are code-defined categories rather than sheet-driven strings. VMware/Nutanix
+// intentionally excluded — they don't render as Product Area tags at all.
 var PRODUCT_FILTER_ORDER=['edge','acuvigil','connect','branded'];
 function populateFilters(){
   var rs=document.getElementById('filter-rep');rs.innerHTML='<option value="">All Reps</option>';
@@ -1422,13 +1389,13 @@ function filterAll(){
   var p=document.getElementById('filter-product').value;
   var hc=document.getElementById('filter-has-contact').checked;
   var sort=document.getElementById('sort-all').value;
-  // Per Ellie (7/18/26): filter on shownProductAreas(a.product_areas) rather than the raw
-  // product_areas array — this must match exactly what's visible in the Product Area column,
-  // otherwise a company could match the filter on a tag that isn't actually shown for it (e.g.
-  // a secondary cluster that got capped out of display).
-  // Per Ellie (7/29/26): search also matches a named contact's first/last name or title, not
-  // just the company — so "who do we know named Priya" finds the right account even if you
-  // don't remember which company she's at.
+  // Filters on shownProductAreas(a.product_areas) rather than the raw product_areas array — this
+  // must match exactly what's visible in the Product Area column, otherwise a company could
+  // match the filter on a tag that isn't actually shown for it (e.g. a secondary cluster that
+  // got capped out of display).
+  // Search also matches a named contact's first/last name or title, not just the company — so
+  // "who do we know named Priya" finds the right account even if you don't remember which
+  // company she's at.
   allF=D.accounts.filter(function(a){return(!s||a.company.toLowerCase().includes(s)||(a.contacts&&a.contacts.some(function(c){return((c.firstName||'')+' '+(c.lastName||'')).toLowerCase().includes(s)||(c.title||'').toLowerCase().includes(s);})))&&(!r||a.rep===r)&&(!u||a.urgency===u)&&(!v||a.vertical===v)&&(!p||shownProductAreas(a.product_areas).indexOf(p)>=0)&&(!hc||(a.contacts&&a.contacts.length>0));}).sort(function(a,b){return b[sort]-a[sort];});
   allP=1;renderAllTable();
 }
@@ -1509,10 +1476,8 @@ function buildCandidates(){
     var m=d.getMonth()+1,dy=d.getDate(),yr=d.getFullYear();
     var mp=String(m).padStart(2,'0'),dp=String(dy).padStart(2,'0');
     var yr2=String(yr).slice(-2);
-    // Per Ellie (8/3/26): whoever's updating the sheet has been naming recent tabs with a
-    // 2-digit year (e.g. 7.31.26) instead of the original 4-digit convention (7.31.2026) this
-    // was built around — that silently broke every scan, since none of the old variants ever
-    // matched. Trying both year lengths makes this resilient to either convention.
+    // Tabs get named with either a 2-digit year (e.g. 7.31.26) or a 4-digit year (7.31.2026) —
+    // trying both makes this resilient to either convention.
     var variants=[m+'.'+dy+'.'+yr, mp+'.'+dp+'.'+yr, mp+'.'+dy+'.'+yr, m+'.'+dp+'.'+yr,
       m+'.'+dy+'.'+yr2, mp+'.'+dp+'.'+yr2, mp+'.'+dy+'.'+yr2, m+'.'+dp+'.'+yr2];
     var daysAgo=Math.round((today-d)/86400000);
@@ -1524,9 +1489,7 @@ function buildCandidates(){
 }
 
 // Scans a sheet's dated tabs newest-first (in batches of 7 concurrent requests) and returns the
-// most recent tab whose data passes validatorFn, or null if none do. Shared by the Hot Accounts
-// scan and the Contacts scan (7/29/26) so both sheets follow the exact same "most recent dated
-// tab wins" convention without duplicating the loop.
+// most recent tab whose data passes validatorFn, or null if none do.
 async function scanForTab(sheetId,validatorFn,statusPrefix){
   var candidates=buildCandidates();
   var found=null;
@@ -1544,13 +1507,6 @@ async function scanForTab(sheetId,validatorFn,statusPrefix){
   }
   return found;
 }
-// Per Ellie (8/17/26): this used to also power an exhaustive multi-tab Contacts scan (checking
-// every dated-tab guess, no early exit, since each weekly tab was an incremental batch of people
-// rather than a supersede-the-last-one snapshot). That scan — and its tab-content-fingerprinting
-// dedup helper, since gviz silently serves a sheet's default tab for any unmatched candidate name
-// — was removed once the Named Account Co-Pilot sheet replaced both old contacts sources with a
-// single fetch-by-name (see NAC_SHEET_ID/NAC_TAB_NAME above). scanForTab (used only by the Hot
-// Accounts scan now) is unaffected — it already stopped at the first match.
 
 // ── SAM Modal ────────────────────────────────────────────────
 function openSamModal(company){
@@ -1639,10 +1595,10 @@ function closeAllModal(){
 var _origFilterAll = null;
 
 // ── PASSWORD GATE ─────────────────────────────────────────────
-// Per Ellie (7/23/26): client-side-only gate — the password lives in this file's source, so
-// it's a soft deterrent (keeps casual/accidental visitors out), not real access control. Anyone
-// who views source or opens dev tools can read it. Fine for an internal sales tool; don't rely
-// on this alone if the sheet behind it ever needs to be treated as sensitive.
+// Client-side-only gate — the password lives in this file's source, so it's a soft deterrent
+// (keeps casual/accidental visitors out), not real access control. Anyone who views source or
+// opens dev tools can read it. Fine for an internal sales tool; don't rely on this alone if the
+// sheet behind it ever needs to be treated as sensitive.
 var DASHBOARD_PASSWORD='S4l3sT34m622!';
 var PW_AUTH_KEY='sc_dashboard_authed';
 function tryUnlock(){
@@ -1669,9 +1625,9 @@ function checkAuthAndInit(){
 }
 
 // ── MAIN ──────────────────────────────────────────────────────
-// Per Ellie (8/13/26): builds the "🔄 refresh" link appended to the footer meta text on every
-// load (cached or fresh) so a rep who wants this week's data confirmed-fresh right now — e.g.
-// right after they know the sheet was just updated — isn't stuck waiting out the cache TTL.
+// Builds the "🔄 refresh" link appended to the footer meta text on every load (cached or fresh)
+// so a rep who wants this week's data confirmed-fresh right now — e.g. right after they know the
+// sheet was just updated — isn't stuck waiting out the cache TTL.
 function footerRefreshLink(){
   return ' · <span class="footer-refresh-link" onclick="refreshDashboard()" style="cursor:pointer;text-decoration:underline">🔄 refresh</span>';
 }
@@ -1694,9 +1650,9 @@ async function init(forceRefresh){
     document.getElementById('err-msg').textContent=msg;
     document.getElementById('err-hint').innerHTML=hint||'';
   }
-  // Per Ellie (8/13/26): serve straight from cache when it's still fresh, skipping the entire
-  // fetch+scan+process pipeline (this is what makes repeat loads fast — see DASH_CACHE_TTL_MS
-  // above). forceRefresh (set by the footer's refresh link) always bypasses this.
+  // Serve straight from cache when it's still fresh, skipping the entire fetch+scan+process
+  // pipeline (this is what makes repeat loads fast — see DASH_CACHE_TTL_MS above). forceRefresh
+  // (set by the footer's refresh link) always bypasses this.
   if(!forceRefresh){
     try{
       var cachedRaw=localStorage.getItem(DASH_CACHE_KEY);
@@ -1716,13 +1672,12 @@ async function init(forceRefresh){
     }catch(e){/* corrupt or unavailable cache — fall through to a normal full load */}
   }
   try{
-    // Per Ellie (8/4/26, updated 8/17/26): Hot Accounts and Contacts are kicked off together,
-    // before awaiting either, so they run concurrently instead of stacked in a queue.
-    // Per Ellie (8/17/26): the Named Account Co-Pilot fetch is skipped entirely (no network
-    // request at all) when the weekly cache is still fresh — see NAC_WEEKLY_CACHE_KEY above. This
-    // check only depends on the clock, not on Hot Accounts data, so it happens before either
-    // promise starts rather than after — no reason to make a 49k-row request just to throw the
-    // result away a moment later once we realize the cache was already good.
+    // Hot Accounts and Contacts are kicked off together, before awaiting either, so they run
+    // concurrently instead of stacked in a queue. The Named Account Co-Pilot fetch is skipped
+    // entirely (no network request at all) when the weekly cache is still fresh — see
+    // NAC_WEEKLY_CACHE_KEY above. This check only depends on the clock, not on Hot Accounts data,
+    // so it happens before either promise starts rather than after — no reason to make a
+    // 49k-row request just to throw the result away once we realize the cache was already good.
     document.getElementById('loading-tab').textContent='Loading dashboard data…';
     var nacCached=null;
     try{nacCached=JSON.parse(localStorage.getItem(NAC_WEEKLY_CACHE_KEY)||'null');}catch(e){nacCached=null;}
@@ -1750,13 +1705,13 @@ async function init(forceRefresh){
         var nacData=await nacPromise;
         if(isNacData(nacData)){
           var fullNacIndex=buildNacContactIndex(parseGvizResponse(nacData),Date.now());
-          // Per Ellie (8/17/26): trimmed to only this week's tracked Named Accounts before
-          // caching — the unfiltered index runs ~15MB (7,000+ distinct companies in the raw CRM
-          // export), well past what localStorage reliably holds, while the filtered set is a few
-          // MB at most. Nothing else is ever looked up anyway (a contact for a company that isn't
-          // a tracked named account is never displayed) — the one real tradeoff is that a company
-          // which only *becomes* a tracked named account mid-week won't have contacts populated
-          // until the next Friday refresh (or a manual refresh).
+          // Trimmed to only this week's tracked Named Accounts before caching — the unfiltered
+          // index runs ~15MB (7,000+ distinct companies in the raw CRM export), well past what
+          // localStorage reliably holds, while the filtered set is a few MB at most. Nothing else
+          // is ever looked up anyway (a contact for a company that isn't a tracked named account
+          // is never displayed) — the one real tradeoff is that a company which only *becomes* a
+          // tracked named account mid-week won't have contacts populated until the next Friday
+          // refresh (or a manual refresh).
           var filteredNacIndex={};
           namedAccountKeys.forEach(function(k){if(fullNacIndex[k])filteredNacIndex[k]=fullNacIndex[k];});
           contactsByCompany=filteredNacIndex;
@@ -1771,10 +1726,8 @@ async function init(forceRefresh){
     // localStorage), so the Contacts tab can flag names that weren't there last time instead of
     // making a rep re-scan the whole ranked list to spot what changed. First run ever (nothing on
     // file yet) intentionally flags nothing — everything looking "new" on day one would just be
-    // noise. Per Ellie (8/17/26): this used to be keyed on which dated tab was most recently
-    // found, since Contacts came from a rotating set of weekly tabs; now there's a single,
-    // continuously-updated sheet instead of rotating tabs, so it just diffs against whatever was
-    // seen on the previous load, every load, with no tab-name gating needed.
+    // noise. Diffs against whatever was seen on the previous load, every load — no tab-name
+    // gating needed since there's a single, continuously-updated sheet rather than rotating tabs.
     var newContactKeys=[];
     try{
       var curContactKeys=Object.keys(contactsByCompany);
@@ -1789,17 +1742,16 @@ async function init(forceRefresh){
     D=processRawData(raw,contactsByCompany);
     D.nac_loaded=nacLoaded;
     D.new_contact_keys=newContactKeys;
-    // Per Ellie (8/17/26): contacts are now refreshed weekly, not on every load (see
-    // NAC_WEEKLY_CACHE_KEY above), so the footer says as-of-when rather than implying "live" —
-    // Hot Accounts data (score/WoW/intent) is still fetched fresh every load, this date is only
-    // about the contacts side.
+    // Contacts are refreshed weekly, not on every load (see NAC_WEEKLY_CACHE_KEY above), so the
+    // footer says as-of-when rather than implying "live" — Hot Accounts data (score/WoW/intent)
+    // is still fetched fresh every load, this date is only about the contacts side.
     var nacAsOfStr=nacAsOf?new Date(nacAsOf).toLocaleDateString('en-US',{month:'short',day:'numeric'}):null;
     var footerText='Live data · tab: '+found.tab+(nacLoaded?' · contacts: Named Account Co-Pilot (as of '+nacAsOfStr+')':' · contacts: none found');
     document.getElementById('footer-meta').innerHTML=footerText+footerRefreshLink();
-    // Per Ellie (8/13/26): cache the fully-processed result so the next load within
-    // DASH_CACHE_TTL_MS skips the ~172-request guessing scan entirely (see DASH_CACHE_KEY above).
-    // Wrapped in try/catch since this must never break a load that otherwise succeeded — a full
-    // localStorage quota or private-browsing restriction just means caching silently doesn't happen.
+    // Cache the fully-processed result so the next load within DASH_CACHE_TTL_MS skips the
+    // ~172-request guessing scan entirely (see DASH_CACHE_KEY above). Wrapped in try/catch since
+    // this must never break a load that otherwise succeeded — a full localStorage quota or
+    // private-browsing restriction just means caching silently doesn't happen.
     try{localStorage.setItem(DASH_CACHE_KEY,JSON.stringify({savedAt:Date.now(),D:D,footerText:footerText}));}catch(e){}
     document.getElementById('loading-screen').style.display='none';
     document.getElementById('main').style.display='block';
