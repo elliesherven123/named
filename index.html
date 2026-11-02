@@ -360,9 +360,10 @@ tr:hover td{background:rgba(0,154,222,0.03);}
 <div class="tab-panel" id="tab-contacts">
   <div class="sh">Key Contacts <span class="sh-hint" id="contacts-tab-hint">Accounts with a named contact on file — ranked by Hot Score</span></div>
   <div class="filter-bar" style="margin-bottom:12px;">
-    <select class="fs" id="filter-contacts-rep" onchange="renderContactsTab()"><option value="">All Reps</option></select>
+    <select class="fs" id="filter-contacts-rep" onchange="contactsRepFilterChanged()"><option value="">All Reps</option></select>
   </div>
   <div id="contacts-list"></div>
+  <div class="pag" id="pag-contacts"></div>
 </div>
 
 
@@ -1393,28 +1394,30 @@ function renderAll_(){
   var pills=document.getElementById('header-pills');
   pills.innerHTML='<div class="hpill hpill-strike">🟢 '+D.strike_count+' Strike Now</div><div class="hpill hpill-warm">🟠 '+D.warmup_count+' Warm Up</div><div class="hpill hpill-monitor">🔵 '+D.monitor_count+' Monitor</div><div class="hpill hpill-total">📊 '+D.total+' Accounts</div>';
 
-  var g=document.getElementById('rep-grid');g.innerHTML='';
-  D.rep_summary.filter(function(r){return r.rep!=='Unassigned';}).forEach(function(r){
+  var g=document.getElementById('rep-grid');
+  g.innerHTML=D.rep_summary.filter(function(r){return r.rep!=='Unassigned';}).map(function(r){
     var col=RC[r.rep]||'#6366f1';
     var ctr=r.total_clicks>0?((r.total_clicks/r.total_impressions)*100).toFixed(2):'0.00';
-    g.innerHTML+='<div class="rep-card" onclick="openDrill(\''+r.rep+'\')"><div class="rep-name"><span class="rep-dot" style="background:'+col+'"></span>'+r.rep+'</div><div class="rep-stats"><div><div class="rs-val" style="color:'+col+'">'+r.account_count+'</div><div class="rs-label">Accounts</div></div><div><div class="rs-val">'+r.avg_score+'</div><div class="rs-label">Avg Score</div></div><div><div class="rs-val">'+r.total_impressions.toLocaleString()+'</div><div class="rs-label">Impr.</div></div><div><div class="rs-val">'+ctr+'%</div><div class="rs-label">CTR</div></div></div></div>';
-  });
+    return '<div class="rep-card" onclick="openDrill(\''+r.rep+'\')"><div class="rep-name"><span class="rep-dot" style="background:'+col+'"></span>'+r.rep+'</div><div class="rep-stats"><div><div class="rs-val" style="color:'+col+'">'+r.account_count+'</div><div class="rs-label">Accounts</div></div><div><div class="rs-val">'+r.avg_score+'</div><div class="rs-label">Avg Score</div></div><div><div class="rs-val">'+r.total_impressions.toLocaleString()+'</div><div class="rs-label">Impr.</div></div><div><div class="rs-val">'+ctr+'%</div><div class="rs-label">CTR</div></div></div></div>';
+  }).join('');
 
-  var tb=document.getElementById('tbody-top10');tb.innerHTML='';
+  var tb=document.getElementById('tbody-top10');
+  var top10Parts=[];
   D.accounts.slice(0,10).forEach(function(a,i){
     var hasContacts=a.contacts&&a.contacts.length>0;
     var rowId='top10-contact-'+i;
     var badge=hasContacts?contactBadgeToggle(a,rowId):'';
-    tb.innerHTML+='<tr><td data-label="">'+(i+1)+'</td><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div><div class="co-name">'+a.company+' '+badge+'</div><div class="co-domain">'+a.domain+'</div></div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Rep" style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700;font-size:12px">'+a.rep+'</td><td data-label="Score">'+sp(a.score)+'</td><td data-label="WoW">'+wowHtml(a.wow_pct)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Product Area">'+productAreaHtml(a.product_areas,true)+'</td><td data-label="Pitch">'+pitchHtml(a,false)+'</td><td data-label="IR Intelligence">'+irHtml(a.company,false)+'</td><td data-label="Actions">'+actions(a.company)+'</td></tr>';
+    top10Parts.push('<tr><td data-label="">'+(i+1)+'</td><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div><div class="co-name">'+a.company+' '+badge+'</div><div class="co-domain">'+a.domain+'</div></div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Rep" style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700;font-size:12px">'+a.rep+'</td><td data-label="Score">'+sp(a.score)+'</td><td data-label="WoW">'+wowHtml(a.wow_pct)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Product Area">'+productAreaHtml(a.product_areas,true)+'</td><td data-label="Pitch">'+pitchHtml(a,false)+'</td><td data-label="IR Intelligence">'+irHtml(a.company,false)+'</td><td data-label="Actions">'+actions(a.company)+'</td></tr>');
     if(hasContacts){
-      tb.innerHTML+='<tr class="contact-detail-row" id="'+rowId+'" style="display:none"><td colspan="11" data-label="">'+keyContactsHtml(a)+'</td></tr>';
+      top10Parts.push('<tr class="contact-detail-row" id="'+rowId+'" style="display:none"><td colspan="11" data-label="">'+keyContactsHtml(a)+'</td></tr>');
     }
   });
+  tb.innerHTML=top10Parts.join('');
 
-  var ft=document.getElementById('five-tabs');ft.innerHTML='';
-  Object.keys(D.top5).forEach(function(rep){ft.innerHTML+='<button class="rep-tab" id="ft-'+rep.replace(/ /g,'-')+'" onclick="loadFive(\''+rep+'\')">'+rep+'</button>';});
-  var dt=document.getElementById('drill-tabs');dt.innerHTML='';
-  Object.keys(D.rep_top10).forEach(function(rep){dt.innerHTML+='<button class="rep-tab" id="dt-'+rep.replace(/ /g,'-')+'" onclick="loadDrill(\''+rep+'\')">'+rep+'</button>';});
+  var ft=document.getElementById('five-tabs');
+  ft.innerHTML=Object.keys(D.top5).map(function(rep){return '<button class="rep-tab" id="ft-'+rep.replace(/ /g,'-')+'" onclick="loadFive(\''+rep+'\')">'+rep+'</button>';}).join('');
+  var dt=document.getElementById('drill-tabs');
+  dt.innerHTML=Object.keys(D.rep_top10).map(function(rep){return '<button class="rep-tab" id="dt-'+rep.replace(/ /g,'-')+'" onclick="loadDrill(\''+rep+'\')">'+rep+'</button>';}).join('');
 
   populateFilters();filterAll();renderMovers();renderContactsTab();
   var fr=Object.keys(D.top5)[0];if(fr){loadFive(fr);loadDrill(fr);}
@@ -1424,42 +1427,42 @@ function loadFive(rep){
   document.querySelectorAll('#five-tabs .rep-tab').forEach(function(b){b.style.background='';b.style.borderColor='';b.style.color='';});
   var btn=document.getElementById('ft-'+rep.replace(/ /g,'-')),col=RC[rep]||'#009ADE';
   if(btn){btn.style.background=col;btn.style.borderColor='transparent';btn.style.color='#fff';}
-  var g=document.getElementById('five-grid');g.innerHTML='';
-  (D.top5[rep]||[]).forEach(function(a,i){
-    g.innerHTML+='<div class="five-card"><div class="five-rank">'+(i+1)+'</div><div class="five-co-wrap">'+logo(a.domain,28).replace('co-logo','five-logo')+'<div><div class="five-co">'+a.company+' '+contactBadge(a)+'</div><div class="five-dm">'+a.domain+'</div></div></div><div class="five-signals">'+sp(a.score)+' '+ub(a.urgency)+' '+vtag(a.vertical)+(a.intent_branded>0?'<span style="font-size:11px;color:#009ADE;font-weight:700">Branded: '+a.intent_branded+'</span>':'')+'</div>'+productAreaHtml(a.product_areas,true)+pitchHtml(a,true)+keyContactsHtml(a)+irHtml(a.company,true)+'<div class="five-actions">'+actions(a.company)+'</div>'+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:8px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\""+" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button></div>";
-  });
+  var g=document.getElementById('five-grid');
+  g.innerHTML=(D.top5[rep]||[]).map(function(a,i){
+    return '<div class="five-card"><div class="five-rank">'+(i+1)+'</div><div class="five-co-wrap">'+logo(a.domain,28).replace('co-logo','five-logo')+'<div><div class="five-co">'+a.company+' '+contactBadge(a)+'</div><div class="five-dm">'+a.domain+'</div></div></div><div class="five-signals">'+sp(a.score)+' '+ub(a.urgency)+' '+vtag(a.vertical)+(a.intent_branded>0?'<span style="font-size:11px;color:#009ADE;font-weight:700">Branded: '+a.intent_branded+'</span>':'')+'</div>'+productAreaHtml(a.product_areas,true)+pitchHtml(a,true)+keyContactsHtml(a)+irHtml(a.company,true)+'<div class="five-actions">'+actions(a.company)+'</div>'+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:8px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\""+" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button></div>";
+  }).join('');
 }
 function loadDrill(rep){
   document.querySelectorAll('#drill-tabs .rep-tab').forEach(function(b){b.style.background='';b.style.borderColor='';b.style.color='';});
   var btn=document.getElementById('dt-'+rep.replace(/ /g,'-')),col=RC[rep]||'#009ADE';
   if(btn){btn.style.background=col;btn.style.borderColor='transparent';btn.style.color='#fff';}
-  var el=document.getElementById('drill-content');el.innerHTML='';
-  (D.rep_top10[rep]||[]).forEach(function(a,i){
+  var el=document.getElementById('drill-content');
+  el.innerHTML=(D.rep_top10[rep]||[]).map(function(a,i){
     var uid='dr-'+i+'-'+rep.replace(/ /g,'');
-    el.innerHTML+='<div class="acct-card"><div class="acct-hdr" onclick="toggleAcct(\''+uid+'\')"><div class="acct-rank" style="color:'+col+'">#'+(i+1)+'</div>'+logo(a.domain,28).replace('co-logo','acct-logo')+'<div class="acct-info"><div class="acct-co">'+a.company+' '+contactBadge(a)+'</div><div class="acct-dm">'+a.domain+'</div></div><div class="acct-sigs">'+sp(a.score)+' '+ub(a.urgency)+' '+vtag(a.vertical)+' '+wowHtml(a.wow_pct)+'</div><span class="expand-icon" id="icon-'+uid+'">▶</span></div><div class="acct-body" id="'+uid+'"><div class="sig-grid"><div class="sig-box"><div class="sig-val" style="color:var(--gold)">'+a.score+'</div><div class="sig-label">Hot Score</div></div><div class="sig-box"><div class="sig-val" style="color:'+(a.wow_pct>0?'var(--green)':'var(--red)')+'">'+( a.wow_pct>0?'+':'')+a.wow_pct.toFixed(1)+'%</div><div class="sig-label">WoW</div></div><div class="sig-box"><div class="sig-val" style="color:#97CAEB">'+a.intent_product+'</div><div class="sig-label">Product</div></div><div class="sig-box"><div class="sig-val" style="color:#009ADE">'+a.intent_branded+'</div><div class="sig-label">Branded</div></div><div class="sig-box"><div class="sig-val" style="color:var(--green)">'+a.ai_readiness+'</div><div class="sig-label">AI Ready</div></div><div class="sig-box"><div class="sig-val">'+a.ad_impressions.toLocaleString()+'</div><div class="sig-label">Impr.</div></div></div>'+productAreaHtml(a.product_areas,true)+pitchHtml(a,true)+keyContactsHtml(a)+irHtml(a.company,true)+'<div class="action-label">🎯 Actions</div>'+actions(a.company)+''+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:10px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\""+" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button></div></div>";
-  });
+    return '<div class="acct-card"><div class="acct-hdr" onclick="toggleAcct(\''+uid+'\')"><div class="acct-rank" style="color:'+col+'">#'+(i+1)+'</div>'+logo(a.domain,28).replace('co-logo','acct-logo')+'<div class="acct-info"><div class="acct-co">'+a.company+' '+contactBadge(a)+'</div><div class="acct-dm">'+a.domain+'</div></div><div class="acct-sigs">'+sp(a.score)+' '+ub(a.urgency)+' '+vtag(a.vertical)+' '+wowHtml(a.wow_pct)+'</div><span class="expand-icon" id="icon-'+uid+'">▶</span></div><div class="acct-body" id="'+uid+'"><div class="sig-grid"><div class="sig-box"><div class="sig-val" style="color:var(--gold)">'+a.score+'</div><div class="sig-label">Hot Score</div></div><div class="sig-box"><div class="sig-val" style="color:'+(a.wow_pct>0?'var(--green)':'var(--red)')+'">'+( a.wow_pct>0?'+':'')+a.wow_pct.toFixed(1)+'%</div><div class="sig-label">WoW</div></div><div class="sig-box"><div class="sig-val" style="color:#97CAEB">'+a.intent_product+'</div><div class="sig-label">Product</div></div><div class="sig-box"><div class="sig-val" style="color:#009ADE">'+a.intent_branded+'</div><div class="sig-label">Branded</div></div><div class="sig-box"><div class="sig-val" style="color:var(--green)">'+a.ai_readiness+'</div><div class="sig-label">AI Ready</div></div><div class="sig-box"><div class="sig-val">'+a.ad_impressions.toLocaleString()+'</div><div class="sig-label">Impr.</div></div></div>'+productAreaHtml(a.product_areas,true)+pitchHtml(a,true)+keyContactsHtml(a)+irHtml(a.company,true)+'<div class="action-label">🎯 Actions</div>'+actions(a.company)+''+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:10px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\""+" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button></div></div>";
+  }).join('');
 }
 function toggleAcct(id){var b=document.getElementById(id),ic=document.getElementById('icon-'+id);if(!b)return;var o=b.classList.toggle('open');if(ic)ic.classList.toggle('open',o);}
 function openDrill(rep){document.querySelectorAll('.nav-btn').forEach(function(b){b.classList.remove('active');if(b.textContent.includes('Rep Drilldown'))b.classList.add('active');});document.querySelectorAll('.tab-panel').forEach(function(p){p.classList.remove('active');});document.getElementById('tab-drilldown').classList.add('active');loadDrill(rep);window.scrollTo(0,0);}
 
 var allF=[],allP=1,PS=25;
+var contactsP=1;
 // Fixed display order for the Product Area filter dropdown — matches the taxonomy order used
 // everywhere else (CLUSTER_TO_PRODUCTS / PRODUCT_LABELS), not a dynamic scan of the data, since
 // these are code-defined categories rather than sheet-driven strings. VMware/Nutanix
 // intentionally excluded — they don't render as Product Area tags at all.
 var PRODUCT_FILTER_ORDER=['edge','acuvigil','connect','branded'];
 function populateFilters(){
-  var rs=document.getElementById('filter-rep');rs.innerHTML='<option value="">All Reps</option>';
-  [...new Set(D.accounts.map(function(a){return a.rep;}))].sort().forEach(function(r){rs.innerHTML+='<option value="'+r+'">'+r+'</option>';});
+  var repOptions=[...new Set(D.accounts.map(function(a){return a.rep;}))].sort().map(function(r){return '<option value="'+r+'">'+r+'</option>';}).join('');
+  var rs=document.getElementById('filter-rep');rs.innerHTML='<option value="">All Reps</option>'+repOptions;
   var crs=document.getElementById('filter-contacts-rep');
   if(crs){
-    crs.innerHTML='<option value="">All Reps</option>';
-    [...new Set(D.accounts.map(function(a){return a.rep;}))].sort().forEach(function(r){crs.innerHTML+='<option value="'+r+'">'+r+'</option>';});
+    crs.innerHTML='<option value="">All Reps</option>'+repOptions;
   }
-  var vs=document.getElementById('filter-vertical');vs.innerHTML='<option value="">All Verticals</option>';
-  [...new Set(D.accounts.map(function(a){return a.vertical;}))].sort().forEach(function(v){vs.innerHTML+='<option value="'+v+'">'+v+'</option>';});
-  var ps=document.getElementById('filter-product');ps.innerHTML='<option value="">All Product Areas</option>';
-  PRODUCT_FILTER_ORDER.forEach(function(k){ps.innerHTML+='<option value="'+k+'">'+(PRODUCT_LABELS[k]||k)+'</option>';});
+  var vs=document.getElementById('filter-vertical');
+  vs.innerHTML='<option value="">All Verticals</option>'+[...new Set(D.accounts.map(function(a){return a.vertical;}))].sort().map(function(v){return '<option value="'+v+'">'+v+'</option>';}).join('');
+  var ps=document.getElementById('filter-product');
+  ps.innerHTML='<option value="">All Product Areas</option>'+PRODUCT_FILTER_ORDER.map(function(k){return '<option value="'+k+'">'+(PRODUCT_LABELS[k]||k)+'</option>';}).join('');
 }
 function filterAll(){
   var s=document.getElementById('search-all').value.toLowerCase();
@@ -1480,32 +1483,41 @@ function filterAll(){
   allP=1;renderAllTable();
 }
 function renderAllTable(){
-  var tb=document.getElementById('tbody-all');tb.innerHTML='';
+  var tb=document.getElementById('tbody-all');
   var page=allF.slice((allP-1)*PS,allP*PS);
   if(!page.length){tb.innerHTML='<tr><td colspan="10" class="empty">No results</td></tr>';return;}
+  // Built as one array and joined once instead of tb.innerHTML+= inside the loop -- appending
+  // inside the loop re-serializes and re-parses everything built so far on every single row,
+  // which costs more the longer the page gets (not just here -- same fix applied to every other
+  // repeatedly-appended list in the dashboard).
+  var allParts=[];
   page.forEach(function(a,idx){
     var hasContacts=a.contacts&&a.contacts.length>0;
     var rowId='ac-contact-'+allP+'-'+idx;
     var badge=hasContacts?contactBadgeToggle(a,rowId):'';
-    tb.innerHTML+='<tr><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div><div class="co-name">'+a.company+' '+badge+'</div><div class="co-domain">'+a.domain+'</div></div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Rep" style="color:'+(RC[a.rep]||'#6b6b99')+';font-size:12px;font-weight:600">'+a.rep+'</td><td data-label="Score">'+sp(a.score)+'</td><td data-label="WoW">'+wowHtml(a.wow_pct)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Product Area">'+productAreaHtml(a.product_areas,true)+'</td><td data-label="Pitch">'+pitchHtml(a,false)+'</td><td data-label="IR Intelligence">'+irHtml(a.company,false)+'</td><td data-label="Actions">'+actions(a.company)+'</td></tr>';
+    allParts.push('<tr><td data-label="Company"><div class="co-wrap">'+logo(a.domain)+'<div><div class="co-name">'+a.company+' '+badge+'</div><div class="co-domain">'+a.domain+'</div></div></div></td><td data-label="Vertical">'+vtag(a.vertical)+'</td><td data-label="Rep" style="color:'+(RC[a.rep]||'#6b6b99')+';font-size:12px;font-weight:600">'+a.rep+'</td><td data-label="Score">'+sp(a.score)+'</td><td data-label="WoW">'+wowHtml(a.wow_pct)+'</td><td data-label="Urgency">'+ub(a.urgency)+'</td><td data-label="Product Area">'+productAreaHtml(a.product_areas,true)+'</td><td data-label="Pitch">'+pitchHtml(a,false)+'</td><td data-label="IR Intelligence">'+irHtml(a.company,false)+'</td><td data-label="Actions">'+actions(a.company)+'</td></tr>');
     if(hasContacts){
-      tb.innerHTML+='<tr class="contact-detail-row" id="'+rowId+'" style="display:none"><td colspan="10" data-label="">'+keyContactsHtml(a)+'</td></tr>';
+      allParts.push('<tr class="contact-detail-row" id="'+rowId+'" style="display:none"><td colspan="10" data-label="">'+keyContactsHtml(a)+'</td></tr>');
     }
   });
+  tb.innerHTML=allParts.join('');
   document.getElementById('all-count').textContent=allF.length+' accounts';
   var mc=document.getElementById('all-modal-count');if(mc)mc.textContent=allF.length+' accounts';
   var tot=Math.ceil(allF.length/PS),pg=document.getElementById('pag-all');
-  pg.innerHTML='<span class="pag-info">Page '+allP+' of '+tot+'</span>';
-  if(allP>1)pg.innerHTML+='<button class="pb" onclick="goP('+(allP-1)+')">‹</button>';
-  for(var i=Math.max(1,allP-2);i<=Math.min(tot,allP+2);i++)pg.innerHTML+='<button class="pb '+(i===allP?'active':'')+'" onclick="goP('+i+')">'+i+'</button>';
-  if(allP<tot)pg.innerHTML+='<button class="pb" onclick="goP('+(allP+1)+')">›</button>';
+  var pgParts=['<span class="pag-info">Page '+allP+' of '+tot+'</span>'];
+  if(allP>1)pgParts.push('<button class="pb" onclick="goP('+(allP-1)+')">‹</button>');
+  for(var i=Math.max(1,allP-2);i<=Math.min(tot,allP+2);i++)pgParts.push('<button class="pb '+(i===allP?'active':'')+'" onclick="goP('+i+')">'+i+'</button>');
+  if(allP<tot)pgParts.push('<button class="pb" onclick="goP('+(allP+1)+')">›</button>');
+  pg.innerHTML=pgParts.join('');
 }
 function goP(p){allP=p;renderAllTable();window.scrollTo(0,0);}
 
 function renderMovers(){
-  var el=document.getElementById('movers-list');el.innerHTML='';
-  D.movers.forEach(function(a){el.innerHTML+='<div class="mover-card"><div style="flex:1"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">'+logo(a.domain,28)+'<span style="font-weight:800;font-size:15px">'+a.company+'</span>'+contactBadge(a)+ub(a.urgency)+vtag(a.vertical)+'</div><div style="font-size:12px;color:var(--muted);margin-bottom:8px">Rep: <span style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700">'+a.rep+'</span> · Score: '+sp(a.score)+'</div>'+productAreaHtml(a.product_areas,true)+pitchHtml(a,true)+keyContactsHtml(a)+irHtml(a.company,true)+actions(a.company)+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:8px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\"" +" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button>"+'</div><div class="mover-pct">▲'+a.wow_pct.toFixed(1)+'%<span>WoW</span></div></div>';});
+  var el=document.getElementById('movers-list');
+  el.innerHTML=D.movers.map(function(a){return '<div class="mover-card"><div style="flex:1"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">'+logo(a.domain,28)+'<span style="font-weight:800;font-size:15px">'+a.company+'</span>'+contactBadge(a)+ub(a.urgency)+vtag(a.vertical)+'</div><div style="font-size:12px;color:var(--muted);margin-bottom:8px">Rep: <span style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700">'+a.rep+'</span> · Score: '+sp(a.score)+'</div>'+productAreaHtml(a.product_areas,true)+pitchHtml(a,true)+keyContactsHtml(a)+irHtml(a.company,true)+actions(a.company)+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:8px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\"" +" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button>"+'</div><div class="mover-pct">▲'+a.wow_pct.toFixed(1)+'%<span>WoW</span></div></div>';}).join('');
 }
+function contactsRepFilterChanged(){contactsP=1;renderContactsTab();}
+function goContactsP(p){contactsP=p;renderContactsTab();window.scrollTo(0,0);}
 function renderContactsTab(){
   var navBtn=document.getElementById('nav-btn-contacts');
   if(navBtn)navBtn.innerHTML='📇 Contacts'+((D.contacts_ranked&&D.contacts_ranked.length)?' <span class="nav-count-badge">'+D.contacts_ranked.length+'</span>':'');
@@ -1513,7 +1525,8 @@ function renderContactsTab(){
   if(hint)hint.textContent='Accounts with a named contact on file — ranked by Hot Score'+(D.nac_loaded?' · source: Named Account Co-Pilot':'');
   var repSel=document.getElementById('filter-contacts-rep');
   var repFilter=repSel?repSel.value:'';
-  var el=document.getElementById('contacts-list');el.innerHTML='';
+  var el=document.getElementById('contacts-list');
+  var pagEl=document.getElementById('pag-contacts');
   var list=(D.contacts_ranked||[]).filter(function(a){return!repFilter||a.rep===repFilter;});
   if(!list.length){
     el.innerHTML='<div class="contacts-empty"><div class="contacts-empty-icon">📇</div>'+
@@ -1521,12 +1534,31 @@ function renderContactsTab(){
         (D.nac_loaded?'No accounts in this week\'s data matched a contact from the Named Account Co-Pilot sheet yet.':'No contacts found — check that the Named Account Co-Pilot sheet is shared as "Anyone with the link can view."')
         :'No contacts on file for '+repFilter+' yet.')+
       '</div>';
+    if(pagEl)pagEl.innerHTML='';
     return;
   }
-  list.forEach(function(a,idx){
+  // Paginated the same way as All Accounts (PS=25/page) and built as one array and joined once
+  // instead of el.innerHTML+= inside the loop -- contact coverage is high enough that this list
+  // can run into the hundreds, and the old unpaginated, append-in-a-loop version re-rendered
+  // every one of those cards on every single dashboard load, whether this tab was ever opened or
+  // not, with a cost that grows with the square of the list length rather than linearly.
+  if(contactsP>Math.ceil(list.length/PS))contactsP=1;
+  var page=list.slice((contactsP-1)*PS,contactsP*PS);
+  var parts=[];
+  page.forEach(function(a,idx){
+    var absIdx=(contactsP-1)*PS+idx;
     var newTag=isNewContact(a)?'<span class="new-contact-tag">🆕 New this week</span>':'';
-    el.innerHTML+='<div class="mover-card"><div style="flex:1"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">'+logo(a.domain,28)+'<span style="font-weight:800;font-size:15px">'+a.company+'</span>'+newTag+ub(a.urgency)+vtag(a.vertical)+'</div><div style="font-size:12px;color:var(--muted);margin-bottom:8px">Rep: <span style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700">'+a.rep+'</span> · Score: '+sp(a.score)+' · WoW: '+wowHtml(a.wow_pct)+'</div>'+productAreaHtml(a.product_areas,true)+pitchHtml(a,true)+keyContactsHtmlForTab(a,'contacts-tab-'+idx)+irHtml(a.company,true)+actions(a.company)+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:8px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\"" +" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button>"+'</div></div>';
+    parts.push('<div class="mover-card"><div style="flex:1"><div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;flex-wrap:wrap">'+logo(a.domain,28)+'<span style="font-weight:800;font-size:15px">'+a.company+'</span>'+newTag+ub(a.urgency)+vtag(a.vertical)+'</div><div style="font-size:12px;color:var(--muted);margin-bottom:8px">Rep: <span style="color:'+(RC[a.rep]||'#6b6b99')+';font-weight:700">'+a.rep+'</span> · Score: '+sp(a.score)+' · WoW: '+wowHtml(a.wow_pct)+'</div>'+productAreaHtml(a.product_areas,true)+pitchHtml(a,true)+keyContactsHtmlForTab(a,'contacts-tab-'+absIdx)+irHtml(a.company,true)+actions(a.company)+"<button class=\"btn-rfp btn-rfp-sam\" style=\"margin-top:8px;cursor:pointer;border:none;width:100%;font-size:11px;font-weight:700;\" data-co=\""+encodeURIComponent(a.company)+"\"" +" onclick=\"openSamModal(decodeURIComponent(this.dataset.co))\">🏛️ Federal RFP Search</button>"+'</div></div>');
   });
+  el.innerHTML=parts.join('');
+  if(pagEl){
+    var tot=Math.ceil(list.length/PS);
+    var pagParts=['<span class="pag-info">Page '+contactsP+' of '+tot+' ('+list.length+' accounts)</span>'];
+    if(contactsP>1)pagParts.push('<button class="pb" onclick="goContactsP('+(contactsP-1)+')">‹</button>');
+    for(var i=Math.max(1,contactsP-2);i<=Math.min(tot,contactsP+2);i++)pagParts.push('<button class="pb '+(i===contactsP?'active':'')+'" onclick="goContactsP('+i+')">'+i+'</button>');
+    if(contactsP<tot)pagParts.push('<button class="pb" onclick="goContactsP('+(contactsP+1)+')">›</button>');
+    pagEl.innerHTML=pagParts.join('');
+  }
 }
 // ── GVIZ FETCH ────────────────────────────────────────────────
 function fetchGvizTab(tabName,sheetId){
