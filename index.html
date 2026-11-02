@@ -441,7 +441,9 @@ tr:hover td{background:rgba(0,154,222,0.03);}
 // ═══════════════════════════════════════════════════════════════
 // CONFIG
 // ═══════════════════════════════════════════════════════════════
-var SHEET_ID = '1AQrVdqo6YQ4sS5l5KbZg9t9W_ZzbIA99yuy5Bd6n5wU';
+// Hot Accounts source: this week's data always lives in this one sheet (no date-guessed tabs,
+// no scanning across weeks) -- fetched directly by sheet ID, default (first) tab.
+var SHEET_ID = '1NfI4Jbp_ynOxrs4KXzTFaYle2qVFESMQU0FP9KTIHfk';
 // Contacts source: a single sheet with real Last Activity / Last Modified dates on every row,
 // so recency is computed directly rather than inferred from tab/sheet origin. Fetched by exact
 // tab name (not scanned for) since this sheet has only the one tab.
@@ -498,10 +500,8 @@ function contactPriorityBoost(contacts){
   return contacts.some(function(c){return c.source==='weekly';})?CONTACT_PRIORITY_BOOST_SYNDICATION:CONTACT_PRIORITY_BOOST_LEADS;
 }
 var SAM_DEFAULT_KEY = 'SAM-df2e71ba-c0b2-4693-815f-8f3d3756f2ac';
-// The Hot Accounts scan guesses candidate tab names (~172 speculative gviz requests) since that
-// sheet doesn't expose its real tab list without extra setup. This caches the fully-processed
-// dashboard object (D) in localStorage for a short window so repeat loads skip the entire
-// fetch+process pipeline and render instantly.
+// Caches the fully-processed dashboard object (D) in localStorage for a short window so repeat
+// loads skip the entire fetch+process pipeline and render instantly.
 // Cache key is versioned (v2) so a schema change to D invalidates old cached entries instead of
 // rendering with stale/missing fields.
 var DASH_CACHE_KEY='sc_dashboard_cache_v2';
@@ -1061,7 +1061,6 @@ function parseGvizResponse(data){
 function processRawData(raw,contactsByCompany){
   contactsByCompany=contactsByCompany||{};
   var headers=raw.headers,rows=raw.rows;
-  function col(row,name){var i=headers.indexOf(name);return i>=0?row[i]:null;}
   function num(v,fb){var n=parseFloat(v);return isNaN(n)?(fb||0):n;}
   var accounts=[];
   // The Company column header text isn't reliable — it's shown up as literally "z" on at least
@@ -1069,23 +1068,41 @@ function processRawData(raw,contactsByCompany){
   // label-based lookup below found nothing. Company always lives in column A regardless of what
   // its header says, so fall back to index 0 whenever the "Company" label can't be found.
   var companyColIdx=headers.indexOf(COL.company);
+  // Resolve every other column's position once per load (10/26) instead of re-running
+  // headers.indexOf() inside the per-row loop below — see the identical fix in
+  // buildNacContactIndex for why this matters a lot more there, but it's free to fix here too.
+  var IDX={
+    rep:headers.indexOf(COL.rep),
+    domain:headers.indexOf(COL.domain),
+    score:headers.indexOf(COL.score),
+    wow_pct:headers.indexOf(COL.wow_pct),
+    intent_product:headers.indexOf(COL.intent_product),
+    intent_branded:headers.indexOf(COL.intent_branded),
+    ai_readiness:headers.indexOf(COL.ai_readiness),
+    ad_impressions:headers.indexOf(COL.ad_impressions),
+    ad_clicks:headers.indexOf(COL.ad_clicks),
+    exp_count:headers.indexOf(COL.exp_count),
+    last_score:headers.indexOf(COL.last_score),
+    topic_keywords:headers.indexOf(COL.topic_keywords)
+  };
+  function col(row,idx){return idx>=0?row[idx]:null;}
   rows.forEach(function(row){
     var company=String((companyColIdx>=0?row[companyColIdx]:row[0])||'').trim();
     if(!company)return;
-    var repRaw=String(col(row,COL.rep)||'').trim();var rep=(!repRaw||/^#?n\/?a$/i.test(repRaw))?'Unassigned':repRaw;
-    var domain=String(col(row,COL.domain)||'').trim().toLowerCase().replace(/^www\./,'');
+    var repRaw=String(col(row,IDX.rep)||'').trim();var rep=(!repRaw||/^#?n\/?a$/i.test(repRaw))?'Unassigned':repRaw;
+    var domain=String(col(row,IDX.domain)||'').trim().toLowerCase().replace(/^www\./,'');
     if(!domain)domain=guessDomain(company);
-    var score=Math.round(num(col(row,COL.score))*10)/10;
-    var wow_raw=num(col(row,COL.wow_pct));
+    var score=Math.round(num(col(row,IDX.score))*10)/10;
+    var wow_raw=num(col(row,IDX.wow_pct));
     var wow_pct=Math.round((Math.abs(wow_raw)>1?wow_raw:wow_raw*100)*10)/10;
-    var ip=Math.round(num(col(row,COL.intent_product)));
-    var ib=Math.round(num(col(row,COL.intent_branded)));
-    var ai=Math.round(num(col(row,COL.ai_readiness)));
-    var adI=Math.round(num(col(row,COL.ad_impressions)));
-    var adC=Math.round(num(col(row,COL.ad_clicks)));
-    var exp=Math.round(num(col(row,COL.exp_count)));
-    var last=Math.round(num(col(row,COL.last_score))*10)/10;
-    var topic_kw=String(col(row,COL.topic_keywords)||'').trim();
+    var ip=Math.round(num(col(row,IDX.intent_product)));
+    var ib=Math.round(num(col(row,IDX.intent_branded)));
+    var ai=Math.round(num(col(row,IDX.ai_readiness)));
+    var adI=Math.round(num(col(row,IDX.ad_impressions)));
+    var adC=Math.round(num(col(row,IDX.ad_clicks)));
+    var exp=Math.round(num(col(row,IDX.exp_count)));
+    var last=Math.round(num(col(row,IDX.last_score))*10)/10;
+    var topic_kw=String(col(row,IDX.topic_keywords)||'').trim();
     var vertical=classifyVertical(company);
     var contacts=sortContactsForDisplay(contactsByCompany[normalizeCompanyForMatch(company)]||[]);
     var urgency=calcUrgency(score,wow_pct,ib,ip,ai);
@@ -1153,27 +1170,47 @@ function buildNacContactIndex(craw,nowMs){
   var idx={};
   if(!craw)return idx;
   var headers=craw.headers,rows=craw.rows;
-  function col(row,name){if(!name)return null;var i=headers.indexOf(name);return i>=0?row[i]:null;}
+  // Column positions are resolved once per load, not per row (10/26 fix). With ~49,319 rows and
+  // 12 fields read per row, the old col() ran headers.indexOf() fresh every single time — over
+  // half a million linear scans through the header array on every cold load of this sheet (every
+  // Monday, for anyone who only opens the dashboard once a week, since that's exactly when the
+  // weekly contacts cache has gone stale). Resolving each needed column's index once up front
+  // turns that into 12 lookups total; the loop below just reads by position.
+  var IDX={
+    company:headers.indexOf(COL_NAC.company),
+    lastActivity:headers.indexOf(COL_NAC.lastActivity),
+    lastModified:headers.indexOf(COL_NAC.lastModified),
+    firstName:headers.indexOf(COL_NAC.firstName),
+    lastName:headers.indexOf(COL_NAC.lastName),
+    phone:headers.indexOf(COL_NAC.phone),
+    title:headers.indexOf(COL_NAC.title),
+    country:headers.indexOf(COL_NAC.country),
+    email:headers.indexOf(COL_NAC.email),
+    leadSource:headers.indexOf(COL_NAC.leadSource),
+    doNotCall:headers.indexOf(COL_NAC.doNotCall),
+    emailOptOut:headers.indexOf(COL_NAC.emailOptOut)
+  };
+  function at(row,i){return i>=0?row[i]:null;}
   rows.forEach(function(row){
-    var company=String(col(row,COL_NAC.company)||'').trim();
+    var company=String(at(row,IDX.company)||'').trim();
     var key=normalizeCompanyForMatch(company);
     if(!key)return;
     // Last Activity is blank for roughly half of all rows — Last Modified is populated almost
     // universally, so it's the fallback rather than a second independent check.
-    var engagementDate=parseGvizDateValue(col(row,COL_NAC.lastActivity))||parseGvizDateValue(col(row,COL_NAC.lastModified));
+    var engagementDate=parseGvizDateValue(at(row,IDX.lastActivity))||parseGvizDateValue(at(row,IDX.lastModified));
     var daysAgo=engagementDate?Math.round((nowMs-engagementDate.getTime())/86400000):null;
     var recentlyEngaged=daysAgo!==null&&daysAgo>=0&&daysAgo<=RECENTLY_ENGAGED_WINDOW_DAYS;
     var contact={
-      firstName:String(col(row,COL_NAC.firstName)||'').trim(),
-      lastName:String(col(row,COL_NAC.lastName)||'').trim(),
-      phone:String(col(row,COL_NAC.phone)||'').trim(),
-      title:String(col(row,COL_NAC.title)||'').trim(),
+      firstName:String(at(row,IDX.firstName)||'').trim(),
+      lastName:String(at(row,IDX.lastName)||'').trim(),
+      phone:String(at(row,IDX.phone)||'').trim(),
+      title:String(at(row,IDX.title)||'').trim(),
       company:company,
-      country:String(col(row,COL_NAC.country)||'').trim(),
-      email:String(col(row,COL_NAC.email)||'').trim(),
-      leadSource:String(col(row,COL_NAC.leadSource)||'').trim(),
-      doNotCall:/^true$/i.test(String(col(row,COL_NAC.doNotCall)||'')),
-      emailOptOut:/^true$/i.test(String(col(row,COL_NAC.emailOptOut)||'')),
+      country:String(at(row,IDX.country)||'').trim(),
+      email:String(at(row,IDX.email)||'').trim(),
+      leadSource:String(at(row,IDX.leadSource)||'').trim(),
+      doNotCall:/^true$/i.test(String(at(row,IDX.doNotCall)||'')),
+      emailOptOut:/^true$/i.test(String(at(row,IDX.emailOptOut)||'')),
       engagementDaysAgo:daysAgo,
       source:recentlyEngaged?'weekly':'leads'
     };
@@ -1201,7 +1238,50 @@ function formatPhone(p){
 }
 
 // ── RENDER HELPERS ────────────────────────────────────────────
-function logo(domain,size){size=size||22;return '<img class="co-logo" src="https://logo.clearbit.com/'+domain+'?size=64" onerror="this.src=\'https://www.google.com/s2/favicons?domain='+domain+'&sz=64\';this.onerror=null" width="'+size+'" height="'+size+'" alt="" loading="lazy">';}
+// logo() runs on every single render (switching tabs, filtering, paginating all rebuild the same
+// companies' <img> tags from scratch), and without this, every one of those renders tries
+// logo.clearbit.com first and only falls back to Google's favicon service on failure -- so any
+// domain clearbit doesn't have (most of them) pays a failed network request on every render,
+// forever, session after session. This remembers, per domain, which source actually resolved
+// (or that neither did) in localStorage, so once a domain's logo is resolved once, every later
+// render -- this session or a future one -- goes straight to the right URL, or skips querying
+// either service entirely for a domain with no logo anywhere.
+var LOGO_CACHE_KEY='sc_logo_source_cache_v1';
+var LOGO_CACHE_TTL_MS=30*24*60*60*1000; // 30 days -- company logos/favicons change rarely
+var logoCache=(function(){try{return JSON.parse(localStorage.getItem(LOGO_CACHE_KEY)||'{}');}catch(e){return{};}})();
+var logoCacheSaveTimer=null;
+// Debounced write -- a single render can resolve dozens of logos in a tight loop, so this writes
+// to localStorage once after things settle rather than on every individual logo load/error.
+function saveLogoCacheSoon(){
+  clearTimeout(logoCacheSaveTimer);
+  logoCacheSaveTimer=setTimeout(function(){try{localStorage.setItem(LOGO_CACHE_KEY,JSON.stringify(logoCache));}catch(e){}},800);
+}
+function rememberLogoSource(domain,source){logoCache[domain]={source:source,savedAt:Date.now()};saveLogoCacheSoon();}
+function clearbitLogoUrl(domain){return 'https://logo.clearbit.com/'+domain+'?size=64';}
+function googleFaviconUrl(domain){return 'https://www.google.com/s2/favicons?domain='+domain+'&sz=64';}
+function logo(domain,size){
+  size=size||22;
+  var attr='width="'+size+'" height="'+size+'" alt="" loading="lazy"';
+  var cached=logoCache[domain];
+  var fresh=cached&&(Date.now()-cached.savedAt)<LOGO_CACHE_TTL_MS;
+  if(fresh&&cached.source==='none'){
+    // Already learned neither service has a logo for this domain -- skip querying either one.
+    return '<img class="co-logo" src="" '+attr+' style="visibility:hidden">';
+  }
+  if(fresh&&cached.source==='google'){
+    // Already learned clearbit doesn't have this one -- skip straight to Google's favicon
+    // service instead of paying a guaranteed-to-fail clearbit request first.
+    return '<img class="co-logo" src="'+googleFaviconUrl(domain)+'" onerror="this.style.visibility=\'hidden\'" '+attr+'>';
+  }
+  // Not cached yet (or the cache entry expired) -- try clearbit first same as always, and
+  // remember whichever source actually works (or that neither does) for next time.
+  return '<img class="co-logo" src="'+clearbitLogoUrl(domain)+'" '+
+    'onload="rememberLogoSource(\''+domain+'\',\'clearbit\')" '+
+    'onerror="this.onerror=null;this.src=\''+googleFaviconUrl(domain)+'\';'+
+      'this.onload=function(){rememberLogoSource(\''+domain+'\',\'google\')};'+
+      'this.onerror=function(){rememberLogoSource(\''+domain+'\',\'none\');this.style.visibility=\'hidden\';}" '+
+    attr+'>';
+}
 function vtag(v){var cl=VC[v]||'v-other',ic=VI[v]||'🏢',s=v.replace(' & Transportation','').replace(' & Industrial','').replace(' & Utilities','').replace(' Services','').replace(' & Beverage','');return '<span class="vtag '+cl+'">'+ic+' '+s+'</span>';}
 function ub(u){if(u==='Strike Now')return '<span class="ub ub-strike">🟢 Strike Now</span>';if(u==='Warm Up')return '<span class="ub ub-warm">🟠 Warm Up</span>';return '<span class="ub ub-monitor">🔵 Monitor</span>';}
 function sp(s){return '<span class="sp '+(s>=65?'sp-h':s>=50?'sp-m':'sp-l')+'">'+s+'</span>';}
@@ -1457,7 +1537,7 @@ function fetchGvizTab(tabName,sheetId){
     window[cb]=function(data){clearTimeout(timer);resolve(data);delete window[cb];if(s.parentNode)s.parentNode.removeChild(s);};
     var s=document.createElement('script');
     s.onerror=function(){clearTimeout(timer);resolve(null);};
-    s.src='https://docs.google.com/spreadsheets/d/'+sheetId+'/gviz/tq?tqx=out:json;responseHandler:'+cb+'&sheet='+encodeURIComponent(tabName);
+    s.src='https://docs.google.com/spreadsheets/d/'+sheetId+'/gviz/tq?tqx=out:json;responseHandler:'+cb+(tabName?'&sheet='+encodeURIComponent(tabName):'');
     document.head.appendChild(s);
   });
 }
@@ -1465,47 +1545,6 @@ function isHotAccountData(data){
   if(!data||data.status==='error')return false;
   if(!data.table||!data.table.cols||data.table.cols.length<5)return false;
   return data.table.cols.some(function(c){return(c.label||'').toLowerCase().includes('hot account');});
-}
-
-// Build candidate tab names — all 4 padding variants per date
-function buildCandidates(){
-  var today=new Date();
-  var seen={};
-  var list=[];
-  function add(d){
-    var m=d.getMonth()+1,dy=d.getDate(),yr=d.getFullYear();
-    var mp=String(m).padStart(2,'0'),dp=String(dy).padStart(2,'0');
-    var yr2=String(yr).slice(-2);
-    // Tabs get named with either a 2-digit year (e.g. 7.31.26) or a 4-digit year (7.31.2026) —
-    // trying both makes this resilient to either convention.
-    var variants=[m+'.'+dy+'.'+yr, mp+'.'+dp+'.'+yr, mp+'.'+dy+'.'+yr, m+'.'+dp+'.'+yr,
-      m+'.'+dy+'.'+yr2, mp+'.'+dp+'.'+yr2, mp+'.'+dy+'.'+yr2, m+'.'+dp+'.'+yr2];
-    var daysAgo=Math.round((today-d)/86400000);
-    variants.forEach(function(name){if(!seen[name]){seen[name]=1;list.push({tab:name,daysAgo:daysAgo});}});
-  }
-  for(var i=0;i<21;i++){var d=new Date(today);d.setDate(d.getDate()-i);add(d);}
-  for(var w=3;w<=12;w++){var d=new Date(today);d.setDate(d.getDate()-w*7);add(d);}
-  return list;
-}
-
-// Scans a sheet's dated tabs newest-first (in batches of 7 concurrent requests) and returns the
-// most recent tab whose data passes validatorFn, or null if none do.
-async function scanForTab(sheetId,validatorFn,statusPrefix){
-  var candidates=buildCandidates();
-  var found=null;
-  for(var i=0;i<candidates.length&&!found;i+=7){
-    var batch=candidates.slice(i,i+7);
-    var tabEl=document.getElementById('loading-tab');
-    if(tabEl)tabEl.textContent=statusPrefix+'… (batch '+(Math.floor(i/7)+1)+')';
-    var results=await Promise.all(batch.map(function(c){
-      return fetchGvizTab(c.tab,sheetId).then(function(data){
-        return validatorFn(data)?{tab:c.tab,data:data,daysAgo:c.daysAgo}:null;
-      });
-    }));
-    var hits=results.filter(Boolean).sort(function(a,b){return a.daysAgo-b.daysAgo;});
-    if(hits.length)found=hits[0];
-  }
-  return found;
 }
 
 // ── SAM Modal ────────────────────────────────────────────────
@@ -1683,13 +1722,13 @@ async function init(forceRefresh){
     try{nacCached=JSON.parse(localStorage.getItem(NAC_WEEKLY_CACHE_KEY)||'null');}catch(e){nacCached=null;}
     var nacCacheFresh=!forceRefresh&&!!nacCached&&nacWeeklyCacheIsFresh(nacCached.savedAt);
 
-    var hotAccountsPromise=scanForTab(SHEET_ID,isHotAccountData,'Scanning recent tabs for account data');
+    var hotAccountsPromise=fetchGvizTab(null,SHEET_ID);
     var nacPromise=nacCacheFresh?null:fetchGvizTab(NAC_TAB_NAME,NAC_SHEET_ID).catch(function(){return null;});
 
-    var found=await hotAccountsPromise;
-    if(!found)throw new Error('No hot accounts data found in the last several weeks. Check that the sheet is shared as "Anyone with the link can view" and that tabs are named M.D.YYYY, MM.DD.YYYY, M.D.YY, or MM.DD.YY (e.g. 6.16.2026 or 6.16.26).');
-    document.getElementById('loading-tab').textContent='Loading tab "'+found.tab+'"…';
-    var raw=parseGvizResponse(found.data);
+    var hotData=await hotAccountsPromise;
+    if(!isHotAccountData(hotData))throw new Error('No hot accounts data found. Check that the sheet is shared as "Anyone with the link can view."');
+    document.getElementById('loading-tab').textContent='Loading account data…';
+    var raw=parseGvizResponse(hotData);
     var namedAccountKeys=extractNamedAccountKeys(raw);
 
     // Contacts are supplementary, not core — a problem loading them (sheet renamed, unshared,
@@ -1746,10 +1785,10 @@ async function init(forceRefresh){
     // footer says as-of-when rather than implying "live" — Hot Accounts data (score/WoW/intent)
     // is still fetched fresh every load, this date is only about the contacts side.
     var nacAsOfStr=nacAsOf?new Date(nacAsOf).toLocaleDateString('en-US',{month:'short',day:'numeric'}):null;
-    var footerText='Live data · tab: '+found.tab+(nacLoaded?' · contacts: Named Account Co-Pilot (as of '+nacAsOfStr+')':' · contacts: none found');
+    var footerText='Live data'+(nacLoaded?' · contacts: Named Account Co-Pilot (as of '+nacAsOfStr+')':' · contacts: none found');
     document.getElementById('footer-meta').innerHTML=footerText+footerRefreshLink();
     // Cache the fully-processed result so the next load within DASH_CACHE_TTL_MS skips the
-    // ~172-request guessing scan entirely (see DASH_CACHE_KEY above). Wrapped in try/catch since
+    // fetch+process pipeline entirely (see DASH_CACHE_KEY above). Wrapped in try/catch since
     // this must never break a load that otherwise succeeded — a full localStorage quota or
     // private-browsing restriction just means caching silently doesn't happen.
     try{localStorage.setItem(DASH_CACHE_KEY,JSON.stringify({savedAt:Date.now(),D:D,footerText:footerText}));}catch(e){}
@@ -1757,7 +1796,7 @@ async function init(forceRefresh){
     document.getElementById('main').style.display='block';
     renderAll_();
   }catch(err){
-    showError('Could not load data',err.message,'Sheet ID: <code>'+SHEET_ID+'</code><br>Tabs must be named M.D.YYYY, MM.DD.YYYY, M.D.YY, or MM.DD.YY (e.g. <code>6.16.2026</code> or <code>6.16.26</code>) and the sheet must be set to <strong>"Anyone with the link can view."</strong>');
+    showError('Could not load data',err.message,'Sheet ID: <code>'+SHEET_ID+'</code><br>The sheet must be set to <strong>"Anyone with the link can view."</strong>');
   }
 }
 
